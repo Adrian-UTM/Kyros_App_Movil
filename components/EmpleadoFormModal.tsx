@@ -205,9 +205,9 @@ export default function EmpleadoFormModal({ visible, empleado, onDismiss, onSave
 
                     {!loadingData && (
                         <>
-                            {/* Nombre */}
+                            {/* Nombre Completo */}
                             <TextInput
-                                label="Nombre *"
+                                label="Nombre Completo *"
                                 mode="outlined"
                                 value={nombre}
                                 onChangeText={setNombre}
@@ -215,7 +215,7 @@ export default function EmpleadoFormModal({ visible, empleado, onDismiss, onSave
                                 style={styles.input}
                             />
                             {touched.nombre && nombre.trim().length === 0 && (
-                                <HelperText type="error" visible>El nombre es requerido</HelperText>
+                                <HelperText type="error" visible>El nombre completo es requerido</HelperText>
                             )}
 
                             {/* Especialidad */}

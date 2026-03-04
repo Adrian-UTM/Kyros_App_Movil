@@ -15,8 +15,6 @@ interface Empleado {
     id: number;
     nombre: string;
     especialidad: string | null;
-    telefono: string | null;
-    activo: boolean;
     sucursal_id: number | null;
     sucursal_nombre?: string;
 }
@@ -41,7 +39,7 @@ export default function EmpleadosScreen() {
         try {
             let query = supabase
                 .from('empleados')
-                .select('id, nombre, especialidad, telefono, activo, sucursal_id, sucursales(nombre)')
+                .select('id, nombre, especialidad, sucursal_id, sucursales(nombre)')
                 .eq('negocio_id', negocioId);
 
             // Branch users only see their branch employees
@@ -154,7 +152,7 @@ export default function EmpleadosScreen() {
         setModalVisible(true);
     };
 
-    const activos = empleados.filter(e => e.activo !== false);
+    const activos = empleados;
 
     return (
         <KyrosScreen title="Empleados">
@@ -241,15 +239,12 @@ export default function EmpleadosScreen() {
                                                 {...props}
                                                 size={40}
                                                 label={getInitials(emp.nombre)}
-                                                style={{ backgroundColor: emp.activo !== false ? theme.colors.secondaryContainer : '#ddd' }}
+                                                style={{ backgroundColor: theme.colors.secondaryContainer }}
                                                 color={theme.colors.onSecondaryContainer}
                                             />
                                         )}
                                         right={props => (
                                             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                                {emp.activo === false && (
-                                                    <Text style={{ color: '#999', fontSize: 12, marginRight: 8 }}>Inactivo</Text>
-                                                )}
                                                 <TouchableOpacity onPress={() => openEdit(emp)}>
                                                     <List.Icon {...props} icon="pencil" color={theme.colors.primary} />
                                                 </TouchableOpacity>

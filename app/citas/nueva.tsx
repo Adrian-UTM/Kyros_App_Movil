@@ -248,7 +248,7 @@ export default function NuevaCitaScreen() {
                     fecha_hora_inicio: fechaHoraInicio.toISOString(),
                     fecha_hora_fin: fechaHoraFin.toISOString(),
                     estado: 'pendiente',
-                    monto_total: costoTotalBase
+                    total_pagado: costoTotalBase
                 };
                 console.log("[NuevaCita] citaPayload", citaPayload);
 

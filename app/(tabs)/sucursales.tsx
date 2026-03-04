@@ -16,6 +16,8 @@ interface Sucursal {
     nombre: string;
     direccion: string | null;
     telefono: string | null;
+    cuenta_email: string | null;
+    cuenta_password: string | null;
 }
 
 export default function SucursalesScreen() {
@@ -28,7 +30,7 @@ export default function SucursalesScreen() {
     const [modalVisible, setModalVisible] = useState(false);
     const [selectedSucursal, setSelectedSucursal] = useState<Sucursal | null>(null);
 
-    const { negocioId, rol, isLoading: appLoading } = useApp();
+    const { negocioId, sucursalId, rol, isLoading: appLoading } = useApp();
 
     const fetchSucursales = useCallback(async () => {
         if (!negocioId) return;
@@ -36,11 +38,16 @@ export default function SucursalesScreen() {
         setError(null);
 
         try {
-            const { data, error: fetchError } = await supabase
+            let query = supabase
                 .from('sucursales')
-                .select('id, nombre, direccion, telefono')
-                .eq('negocio_id', negocioId)
-                .order('nombre');
+                .select('id, nombre, direccion, telefono, cuenta_email, cuenta_password')
+                .eq('negocio_id', negocioId);
+
+            if (rol === 'sucursal' && sucursalId) {
+                query = query.eq('id', sucursalId);
+            }
+
+            const { data, error: fetchError } = await query.order('nombre');
 
             if (fetchError) throw fetchError;
             setSucursales(data || []);

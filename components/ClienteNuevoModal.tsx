@@ -12,7 +12,7 @@ const PHONE_MAX_LENGTH = 15;
 interface ClienteNuevoModalProps {
     visible: boolean;
     onDismiss: () => void;
-    onClienteCreado: (cliente: { id: number; nombre: string; telefono: string; email?: string | null }) => void;
+    onClienteCreado: (cliente: { id: number; nombre: string; telefono: string }) => void;
 }
 
 export default function ClienteNuevoModal({ visible, onDismiss, onClienteCreado }: ClienteNuevoModalProps) {
@@ -21,7 +21,7 @@ export default function ClienteNuevoModal({ visible, onDismiss, onClienteCreado 
 
     const [nombre, setNombre] = useState('');
     const [telefono, setTelefono] = useState('');
-    const [email, setEmail] = useState('');
+
     const [loading, setLoading] = useState(false);
     const [errors, setErrors] = useState<{ nombre?: string; telefono?: string }>({});
     const [touched, setTouched] = useState<{ nombre?: boolean; telefono?: boolean }>({});
@@ -31,7 +31,7 @@ export default function ClienteNuevoModal({ visible, onDismiss, onClienteCreado 
         if (visible) {
             setNombre('');
             setTelefono('');
-            setEmail('');
+
             setErrors({});
             setTouched({});
         }
@@ -104,7 +104,6 @@ export default function ClienteNuevoModal({ visible, onDismiss, onClienteCreado 
                 const insertData: any = {
                     nombre: nombre.trim(),
                     telefono: telefono.trim(),
-                    email: email.trim() || null,
                     negocio_id: negocioId
                 };
 
@@ -118,7 +117,7 @@ export default function ClienteNuevoModal({ visible, onDismiss, onClienteCreado 
                 const { data, error } = await supabase
                     .from('clientes_bot')
                     .insert(insertData)
-                    .select('id, nombre, telefono, email')
+                    .select('id, nombre, telefono')
                     .single();
 
                 if (error) throw error;
@@ -127,8 +126,7 @@ export default function ClienteNuevoModal({ visible, onDismiss, onClienteCreado 
                 console.log('[ClienteNuevoModal] Cliente insertado:', {
                     id: data.id,
                     nombre: data.nombre,
-                    telefono: data.telefono,
-                    email: data.email
+                    telefono: data.telefono
                 });
 
                 Alert.alert('Éxito', 'Cliente guardado correctamente.');
@@ -185,17 +183,6 @@ export default function ClienteNuevoModal({ visible, onDismiss, onClienteCreado 
                     {errors.telefono && (
                         <HelperText type="error" visible={true}>{errors.telefono}</HelperText>
                     )}
-
-                    {/* Email (opcional) */}
-                    <TextInput
-                        label="Email (Opcional)"
-                        mode="outlined"
-                        value={email}
-                        onChangeText={setEmail}
-                        keyboardType="email-address"
-                        autoCapitalize="none"
-                        style={styles.input}
-                    />
 
                     <View style={styles.actions}>
                         <KyrosButton

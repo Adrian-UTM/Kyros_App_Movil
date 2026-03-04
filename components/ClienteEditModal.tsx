@@ -8,7 +8,6 @@ interface Cliente {
     id: number;
     nombre: string;
     telefono: string | null;
-    email?: string | null;
 }
 
 interface ClienteEditModalProps {
@@ -23,7 +22,7 @@ export default function ClienteEditModal({ visible, cliente, negocioId, onDismis
     const theme = useTheme();
     const [nombre, setNombre] = useState('');
     const [telefono, setTelefono] = useState('');
-    const [email, setEmail] = useState('');
+
     const [loading, setLoading] = useState(false);
     const [errors, setErrors] = useState<{ nombre?: string; telefono?: string }>({});
     const [touched, setTouched] = useState<{ nombre?: boolean; telefono?: boolean }>({});
@@ -35,7 +34,6 @@ export default function ClienteEditModal({ visible, cliente, negocioId, onDismis
         if (visible && cliente) {
             setNombre(cliente.nombre);
             setTelefono(cliente.telefono || '');
-            setEmail(cliente.email || '');
             setErrors({});
             setTouched({});
         }
@@ -80,7 +78,7 @@ export default function ClienteEditModal({ visible, cliente, negocioId, onDismis
     };
 
     const handleSave = async () => {
-        console.log('[ClienteEditModal] handleSave called', { nombre, telefono, email, id: cliente?.id });
+        console.log('[ClienteEditModal] handleSave called', { nombre, telefono, id: cliente?.id });
         // Mark all as touched for final validation display
         setTouched({ nombre: true, telefono: true });
 
@@ -96,7 +94,6 @@ export default function ClienteEditModal({ visible, cliente, negocioId, onDismis
                 const updatePayload = {
                     nombre: nombre.trim(),
                     telefono: telefono.trim(),
-                    email: email.trim() || null
                 };
 
                 console.log("[ClienteEditModal] payload", updatePayload);
@@ -157,16 +154,6 @@ export default function ClienteEditModal({ visible, cliente, negocioId, onDismis
                         style={styles.input}
                     />
                     {errors.telefono && <Text style={{ color: theme.colors.error, fontSize: 12, marginBottom: 8 }}>{errors.telefono}</Text>}
-
-                    <TextInput
-                        label="Email (Opcional)"
-                        value={email}
-                        onChangeText={setEmail}
-                        mode="outlined"
-                        keyboardType="email-address"
-                        autoCapitalize="none"
-                        style={styles.input}
-                    />
 
                     <View style={styles.actions}>
                         <Button onPress={onDismiss} disabled={loading} style={styles.button}>

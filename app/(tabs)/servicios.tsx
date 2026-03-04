@@ -16,7 +16,6 @@ interface Servicio {
     nombre: string;
     precio_base: number | null;
     duracion_aprox_minutos: number | null;
-    activo?: boolean;
     descripcion?: string;
 }
 
@@ -46,7 +45,7 @@ export default function ServiciosScreen() {
             // Use negocioId from context (no extra query needed)
             let query = supabase
                 .from('servicios')
-                .select('id, nombre, precio_base, duracion_aprox_minutos, activo')
+                .select('id, nombre, precio_base, duracion_aprox_minutos')
                 .eq('negocio_id', negocioId);
 
             // Branch users see their branch services + global ones
@@ -76,7 +75,7 @@ export default function ServiciosScreen() {
         }, [fetchServicios, appLoading])
     );
 
-    const activos = servicios.filter(s => s.activo !== false);
+    const activos = servicios;
 
     // Show loading while app context is loading
     if (appLoading) {
@@ -171,7 +170,7 @@ export default function ServiciosScreen() {
                                             <MaterialIcons
                                                 name="content-cut"
                                                 size={24}
-                                                color={servicio.activo !== false ? theme.colors.primary : '#999'}
+                                                color={theme.colors.primary}
                                                 style={{ marginLeft: 8, marginRight: 8, alignSelf: 'center' }}
                                             />
                                         )}

@@ -11,6 +11,8 @@ interface SucursalData {
     nombre?: string;
     direccion?: string | null;
     telefono?: string | null;
+    cuenta_email?: string | null;
+    cuenta_password?: string | null;
 }
 
 interface Props {
@@ -27,15 +29,21 @@ export default function SucursalFormModal({ visible, sucursal, onDismiss, onSave
     const [nombre, setNombre] = useState('');
     const [direccion, setDireccion] = useState('');
     const [telefono, setTelefono] = useState('');
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     const [saving, setSaving] = useState(false);
-    const [touched, setTouched] = useState({ nombre: false, direccion: false, telefono: false });
+    const [touched, setTouched] = useState({ nombre: false, direccion: false, telefono: false, email: false, password: false });
 
     useEffect(() => {
         if (visible) {
             setNombre(sucursal?.nombre || '');
             setDireccion(sucursal?.direccion || '');
             setTelefono(sucursal?.telefono || '');
-            setTouched({ nombre: false, direccion: false, telefono: false });
+            setEmail(sucursal?.cuenta_email || '');
+            setPassword(sucursal?.cuenta_password || '');
+            setTouched({ nombre: false, direccion: false, telefono: false, email: false, password: false });
+            setShowPassword(false);
         }
     }, [visible]);
 
@@ -44,15 +52,20 @@ export default function SucursalFormModal({ visible, sucursal, onDismiss, onSave
         setTelefono(text.replace(/\D/g, ''));
     };
 
+    const isEmailValid = email.trim().length > 0 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    const isPasswordValid = isEdit ? true : password.length >= 6;
+
     const isFormValid =
         nombre.trim().length > 0 &&
         direccion.trim().length > 0 &&
-        telefono.length >= 10 && telefono.length <= 15;
+        telefono.length >= 10 && telefono.length <= 15 &&
+        isEmailValid &&
+        isPasswordValid;
 
     const handleSave = async () => {
         console.log("[Sucursal] onPress Guardar");
 
-        setTouched({ nombre: true, direccion: true, telefono: true });
+        setTouched({ nombre: true, direccion: true, telefono: true, email: true, password: true });
         if (!isFormValid) {
             Alert.alert('Error', 'Por favor, completa los campos correctamente antes de guardar.');
             return;
@@ -67,23 +80,27 @@ export default function SucursalFormModal({ visible, sucursal, onDismiss, onSave
 
         try {
             await safeAction('SucursalForm', async () => {
-                const branchData = {
+                const branchData: any = {
                     nombre: nombre.trim(),
                     direccion: direccion.trim(),
                     telefono: telefono,
+                    cuenta_email: email.trim(),
                     negocio_id: negocioId,
                 };
 
+                if (password.trim().length > 0) {
+                    branchData.cuenta_password = password;
+                }
+
                 console.log("[Sucursal] payload", {
-                    nombre: branchData.nombre,
-                    direccion: branchData.direccion,
-                    telefono: branchData.telefono,
-                    negocioId: branchData.negocio_id,
+                    ...branchData,
                     sucursalIdEdit: sucursal?.id
                 });
 
+                let result;
+
                 if (isEdit && sucursal?.id) {
-                    const result = await supabase
+                    result = await supabase
                         .from('sucursales')
                         .update(branchData)
                         .eq('id', sucursal.id)
@@ -91,17 +108,34 @@ export default function SucursalFormModal({ visible, sucursal, onDismiss, onSave
                         .select()
                         .single();
 
-                    console.log("[Sucursal] result", result);
                     if (result.error) throw result.error;
                 } else {
-                    const result = await supabase
+                    result = await supabase
                         .from('sucursales')
                         .insert(branchData)
                         .select()
                         .single();
 
-                    console.log("[Sucursal] result", result);
                     if (result.error) throw result.error;
+                }
+
+                const savedBranch = result.data;
+
+                // Call edge function IF password is provided
+                if (password.trim().length > 0) {
+                    const { data: fnData, error: fnError } = await supabase.functions.invoke('create-branch-user', {
+                        body: {
+                            email: email.trim(),
+                            password: password,
+                            sucursalId: savedBranch.id,
+                            negocioId: negocioId
+                        }
+                    });
+
+                    if (fnError) {
+                        console.error('Error creating auth user:', fnError);
+                        Alert.alert('Aviso', 'Sucursal guardada, pero hubo un error con la cuenta de usuario (Auth).');
+                    }
                 }
 
                 Alert.alert('Éxito', 'Sucursal guardada');
@@ -165,6 +199,36 @@ export default function SucursalFormModal({ visible, sucursal, onDismiss, onSave
                     <HelperText type="error" visible>
                         {telefono.length === 0 ? 'El teléfono es requerido' : `Mínimo 10 dígitos (${telefono.length}/10)`}
                     </HelperText>
+                )}
+
+                {/* Correo */}
+                <TextInput
+                    label="Correo de la Sucursal *"
+                    mode="outlined"
+                    value={email}
+                    onChangeText={setEmail}
+                    onBlur={() => setTouched(t => ({ ...t, email: true }))}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    style={styles.input}
+                />
+                {touched.email && (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) && (
+                    <HelperText type="error" visible>Ingresa un correo válido</HelperText>
+                )}
+
+                {/* Contraseña */}
+                <TextInput
+                    label="Contraseña *"
+                    mode="outlined"
+                    value={password}
+                    onChangeText={setPassword}
+                    onBlur={() => setTouched(t => ({ ...t, password: true }))}
+                    secureTextEntry={!showPassword}
+                    right={<TextInput.Icon icon={showPassword ? "eye-off" : "eye"} onPress={() => setShowPassword(!showPassword)} />}
+                    style={styles.input}
+                />
+                {touched.password && !isEdit && password.length < 6 && (
+                    <HelperText type="error" visible>La contraseña debe tener al menos 6 caracteres</HelperText>
                 )}
 
                 {/* Actions */}

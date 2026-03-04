@@ -97,8 +97,7 @@ export default function ServicioFormModal({ visible, servicio, onDismiss, onServ
                     const insertPayload = {
                         ...payload,
                         negocio_id: negocioId,
-                        sucursal_id: sucursalId,
-                        activo: true
+                        sucursal_id: sucursalId
                     };
                     const { data, error } = await supabase
                         .from('servicios')

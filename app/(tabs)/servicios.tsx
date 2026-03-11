@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { StyleSheet, View, ScrollView } from 'react-native';
+import { StyleSheet, View, ScrollView, Image, Alert } from 'react-native';
 import { Text, List, Divider, useTheme, ActivityIndicator } from 'react-native-paper';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
@@ -10,6 +10,7 @@ import { supabase } from '../../lib/supabaseClient';
 import { useApp } from '../../lib/AppContext';
 import ServicioFormModal from '../../components/ServicioFormModal';
 import { TouchableOpacity } from 'react-native';
+import { confirmAction } from '../../lib/confirm';
 
 interface Servicio {
     id: number;
@@ -17,6 +18,7 @@ interface Servicio {
     precio_base: number | null;
     duracion_aprox_minutos: number | null;
     descripcion?: string;
+    imagen_url?: string | null;
 }
 
 export default function ServiciosScreen() {
@@ -30,22 +32,22 @@ export default function ServiciosScreen() {
     const [modalVisible, setModalVisible] = useState(false);
     const [selectedServicio, setSelectedServicio] = useState<Servicio | null>(null);
 
-    const fetchServicios = useCallback(async () => {
+    const fetchServicios = useCallback(async (showIndicator = true) => {
         // Wait for context to be ready
         if (negocioId === null) {
-            setLoading(false);
+            if (showIndicator) setLoading(false);
             setError('Sin negocio asignado');
             return;
         }
 
-        setLoading(true);
+        if (showIndicator) setLoading(true);
         setError(null);
 
         try {
             // Use negocioId from context (no extra query needed)
             let query = supabase
                 .from('servicios')
-                .select('id, nombre, precio_base, duracion_aprox_minutos')
+                .select('id, nombre, precio_base, duracion_aprox_minutos, imagen_url')
                 .eq('negocio_id', negocioId);
 
             // Branch users see their branch services + global ones
@@ -64,18 +66,38 @@ export default function ServiciosScreen() {
         } finally {
             setLoading(false);
         }
-    }, [negocioId]);
+    }, [negocioId, sucursalId, rol]);
 
     // Refetch when screen gains focus or negocioId changes
     useFocusEffect(
         useCallback(() => {
             if (!appLoading) {
-                fetchServicios();
+                fetchServicios(false);
             }
         }, [fetchServicios, appLoading])
     );
 
     const activos = servicios;
+
+    const handleDeleteServicio = (servicio: Servicio) => {
+        confirmAction(
+            'Eliminar Servicio',
+            `¿Estás seguro de eliminar "${servicio.nombre}"? Esta acción no se puede deshacer.`,
+            async () => {
+                try {
+                    const { error } = await supabase
+                        .from('servicios')
+                        .delete()
+                        .eq('id', servicio.id)
+                        .eq('negocio_id', negocioId);
+                    if (error) throw error;
+                    fetchServicios(true);
+                } catch (err: any) {
+                    Alert.alert('Error', err.message || 'No se pudo eliminar el servicio');
+                }
+            }
+        );
+    };
 
     // Show loading while app context is loading
     if (appLoading) {
@@ -94,44 +116,37 @@ export default function ServiciosScreen() {
             <ScrollView style={styles.container}>
                 {loading && (
                     <View style={styles.centerState}>
-                        <ActivityIndicator size="large" color={theme.colors.primary} />
+                        <ActivityIndicator size="large" color="#38bdf8" />
                         <Text style={styles.stateText}>Cargando servicios...</Text>
                     </View>
                 )}
 
                 {!loading && error && error.toLowerCase().includes('negocio') ? (
                     <View style={styles.centerState}>
-                        <MaterialIcons name="storefront" size={64} color="#888" />
-                        <Text style={[styles.stateText, { color: '#555', fontSize: 16, marginBottom: 8 }]}>
-                            Aún no tienes sucursales creadas
-                        </Text>
-                        <Text style={[styles.stateText, { marginTop: 0, paddingHorizontal: 20 }]}>
-                            Agrega una sucursal en el panel de Sucursales para poder agregar servicios.
-                        </Text>
+                        <MaterialIcons name="storefront" size={64} color="#64748b" />
+                        <Text style={[styles.stateText, { fontSize: 16, marginBottom: 8 }]}>Aún no tienes sucursales</Text>
+                        <Text style={[styles.stateText, { marginTop: 0, paddingHorizontal: 20 }]}>Agrega una sucursal para poder agregar servicios.</Text>
                     </View>
                 ) : !loading && error && (
                     <View style={styles.centerState}>
-                        <MaterialIcons name="error-outline" size={64} color="#d32f2f" />
-                        <Text style={[styles.stateText, { color: '#d32f2f' }]}>{error}</Text>
-                        <KyrosButton onPress={fetchServicios} style={{ marginTop: 16 }}>
-                            Reintentar
-                        </KyrosButton>
+                        <MaterialIcons name="error-outline" size={64} color="#ef4444" />
+                        <Text style={[styles.stateText, { color: '#ef4444' }]}>{error}</Text>
+                        <KyrosButton onPress={() => fetchServicios(true)} style={{ marginTop: 16 }}>Reintentar</KyrosButton>
                     </View>
                 )}
 
                 {!loading && !error && servicios.length === 0 && (
                     <View style={styles.centerState}>
-                        <MaterialIcons name="content-cut" size={64} color="#888" />
+                        <MaterialIcons name="content-cut" size={64} color="#64748b" />
                         <Text style={styles.stateText}>No hay servicios registrados</Text>
-                        <KyrosButton onPress={() => setModalVisible(true)} style={{ marginTop: 16 }}>
-                            Agregar Servicio
-                        </KyrosButton>
+                        <KyrosButton onPress={() => setModalVisible(true)} style={{ marginTop: 16 }}>Agregar Servicio</KyrosButton>
                     </View>
                 )}
 
                 {!loading && !error && servicios.length > 0 && (
                     <>
-                        <KyrosCard>
+                        {/* Add Button */}
+                        <View style={styles.topSection}>
                             <KyrosButton
                                 mode="contained"
                                 icon="plus"
@@ -142,51 +157,53 @@ export default function ServiciosScreen() {
                             >
                                 Nuevo Servicio
                             </KyrosButton>
-                        </KyrosCard>
-                        <KyrosCard title="Resumen">
-                            <View style={styles.statsContainer}>
-                                <View style={styles.statItem}>
-                                    <Text variant="headlineMedium" style={{ color: theme.colors.primary, fontWeight: 'bold' }}>
-                                        {servicios.length}
-                                    </Text>
-                                    <Text variant="bodyMedium">Total</Text>
-                                </View>
-                                <View style={styles.statItem}>
-                                    <Text variant="headlineMedium" style={{ color: theme.colors.primary, fontWeight: 'bold' }}>
-                                        {activos.length}
-                                    </Text>
-                                    <Text variant="bodyMedium">Activos</Text>
-                                </View>
-                            </View>
-                        </KyrosCard>
+                        </View>
 
-                        <KyrosCard title="Lista de servicios">
-                            {servicios.map((servicio, index) => (
-                                <React.Fragment key={servicio.id}>
-                                    <List.Item
-                                        title={servicio.nombre}
-                                        description={`$${servicio.precio_base ?? 0} • ${servicio.duracion_aprox_minutos ?? '—'} min`}
-                                        left={props => (
-                                            <MaterialIcons
-                                                name="content-cut"
-                                                size={24}
-                                                color={theme.colors.primary}
-                                                style={{ marginLeft: 8, marginRight: 8, alignSelf: 'center' }}
-                                            />
-                                        )}
-                                        right={props => (
-                                            <TouchableOpacity onPress={() => {
-                                                setSelectedServicio(servicio);
-                                                setModalVisible(true);
-                                            }} style={{ justifyContent: 'center', paddingLeft: 10 }}>
-                                                <List.Icon {...props} icon="pencil" color={theme.colors.primary} />
-                                            </TouchableOpacity>
-                                        )}
-                                    />
-                                    {index < servicios.length - 1 && <Divider />}
-                                </React.Fragment>
+                        {/* Service List */}
+                        <View style={styles.listSection}>
+                            <View style={styles.sectionHeader}>
+                                <MaterialIcons name="content-cut" size={18} color="#38bdf8" />
+                                <Text style={styles.sectionTitle}>Servicios ({servicios.length})</Text>
+                            </View>
+
+                            {servicios.map(servicio => (
+                                <View key={servicio.id} style={styles.serviceCard}>
+                                    {/* Icon / Image */}
+                                    {servicio.imagen_url ? (
+                                        <Image
+                                            source={{ uri: servicio.imagen_url }}
+                                            style={styles.serviceImage}
+                                        />
+                                    ) : (
+                                        <View style={styles.serviceIconCircle}>
+                                            <MaterialIcons name="content-cut" size={20} color="#38bdf8" />
+                                        </View>
+                                    )}
+
+                                    <View style={styles.serviceInfo}>
+                                        <Text style={styles.serviceName}>{servicio.nombre}</Text>
+                                        <Text style={styles.serviceMeta}>
+                                            ${servicio.precio_base ?? 0} • {servicio.duracion_aprox_minutos ?? '—'} min
+                                        </Text>
+                                    </View>
+
+                                    <View style={styles.serviceActions}>
+                                        <TouchableOpacity
+                                            onPress={() => { setSelectedServicio(servicio); setModalVisible(true); }}
+                                            style={styles.actionBtn}
+                                        >
+                                            <MaterialIcons name="edit" size={18} color="#94a3b8" />
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            onPress={() => handleDeleteServicio(servicio)}
+                                            style={[styles.actionBtn, styles.actionDelete]}
+                                        >
+                                            <MaterialIcons name="delete" size={18} color="#ef4444" />
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
                             ))}
-                        </KyrosCard>
+                        </View>
                     </>
                 )}
 
@@ -202,10 +219,10 @@ export default function ServiciosScreen() {
                 onServicioGuardado={() => {
                     setModalVisible(false);
                     setSelectedServicio(null);
-                    fetchServicios();
+                    fetchServicios(true);
                 }}
             />
-        </KyrosScreen >
+        </KyrosScreen>
     );
 }
 
@@ -213,13 +230,85 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
     },
-    statsContainer: {
-        flexDirection: 'row',
-        justifyContent: 'space-around',
-        paddingVertical: 8,
+    topSection: {
+        backgroundColor: '#111827',
+        borderRadius: 16,
+        padding: 16,
+        margin: 16,
+        marginBottom: 8,
+        borderWidth: 1,
+        borderColor: '#1e293b',
     },
-    statItem: {
+    listSection: {
+        paddingHorizontal: 16,
+        marginTop: 8,
+    },
+    sectionHeader: {
+        flexDirection: 'row',
         alignItems: 'center',
+        gap: 8,
+        marginBottom: 14,
+    },
+    sectionTitle: {
+        color: '#94a3b8',
+        fontSize: 13,
+        fontWeight: '700',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+    serviceCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#111827',
+        borderRadius: 14,
+        padding: 14,
+        marginBottom: 10,
+        borderWidth: 1,
+        borderColor: '#1e293b',
+    },
+    serviceImage: {
+        width: 44,
+        height: 44,
+        borderRadius: 10,
+        marginRight: 14,
+        backgroundColor: '#0f172a',
+    },
+    serviceIconCircle: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: 'rgba(56, 189, 248, 0.15)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 14,
+    },
+    serviceInfo: {
+        flex: 1,
+    },
+    serviceName: {
+        color: '#f1f5f9',
+        fontWeight: '600',
+        fontSize: 15,
+    },
+    serviceMeta: {
+        color: '#64748b',
+        fontSize: 13,
+        marginTop: 2,
+    },
+    serviceActions: {
+        flexDirection: 'row',
+        gap: 6,
+    },
+    actionBtn: {
+        padding: 8,
+        borderRadius: 10,
+        backgroundColor: '#1e293b',
+        borderWidth: 1,
+        borderColor: '#334155',
+    },
+    actionDelete: {
+        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+        borderColor: '#ef4444',
     },
     centerState: {
         alignItems: 'center',
@@ -228,7 +317,7 @@ const styles = StyleSheet.create({
     },
     stateText: {
         marginTop: 16,
-        color: '#888',
+        color: '#64748b',
         textAlign: 'center',
     },
 });

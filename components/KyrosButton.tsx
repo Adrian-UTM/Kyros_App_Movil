@@ -36,7 +36,7 @@ export default function KyrosButton({
             icon={icon}
             compact={compact}
             buttonColor={mode === 'contained' ? theme.colors.primary : undefined}
-            textColor={mode === 'contained' ? theme.colors.onPrimary : theme.colors.primary}
+            textColor={mode === 'contained' ? '#ffffff' : theme.colors.primary}
         >
             {children}
         </Button>
@@ -45,11 +45,7 @@ export default function KyrosButton({
 
 const styles = StyleSheet.create({
     button: {
-        borderRadius: 4, // More square/corporate look often, or keep rounded. Paper default is rounder. Let's use 4 for a slightly sharper look or stick to theme. 
-        // User asked for "consistent". Let's stick to theme roundness or standard.
-        // Let's use standard Paper roundness (which comes from theme) unless specified.
-        // But for explicit "Kyros" identity, maybe slight adjustment.
-        // I will adhere to the request's "blue primary button".
+        borderRadius: 12, // Modern softer, consistent with the new Card radiuses
     },
     content: {
         height: 48, // Standard touch target

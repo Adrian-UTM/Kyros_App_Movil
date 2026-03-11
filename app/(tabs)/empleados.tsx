@@ -10,6 +10,7 @@ import KyrosButton from '../../components/KyrosButton';
 import EmpleadoFormModal from '../../components/EmpleadoFormModal';
 import { supabase } from '../../lib/supabaseClient';
 import { useApp } from '../../lib/AppContext';
+import { confirmAction } from '../../lib/confirm';
 
 interface Empleado {
     id: number;
@@ -17,6 +18,7 @@ interface Empleado {
     especialidad: string | null;
     sucursal_id: number | null;
     sucursal_nombre?: string;
+    disponible: boolean;
 }
 
 export default function EmpleadosScreen() {
@@ -31,15 +33,15 @@ export default function EmpleadosScreen() {
 
     const { negocioId, sucursalId, rol, isLoading: appLoading } = useApp();
 
-    const fetchEmpleados = useCallback(async () => {
+    const fetchEmpleados = useCallback(async (showIndicator = true) => {
         if (!negocioId) return;
-        setLoading(true);
+        if (showIndicator) setLoading(true);
         setError(null);
 
         try {
             let query = supabase
                 .from('empleados')
-                .select('id, nombre, especialidad, sucursal_id, sucursales(nombre)')
+                .select('id, nombre, especialidad, sucursal_id, disponible, sucursales(nombre)')
                 .eq('negocio_id', negocioId);
 
             // Branch users only see their branch employees
@@ -53,6 +55,7 @@ export default function EmpleadosScreen() {
             setEmpleados((data || []).map((e: any) => ({
                 ...e,
                 sucursal_nombre: e.sucursales?.nombre || 'Sin sucursal',
+                disponible: e.disponible ?? true,
             })));
 
         } catch (err: any) {
@@ -67,7 +70,7 @@ export default function EmpleadosScreen() {
         useCallback(() => {
             if (!appLoading) {
                 if (negocioId) {
-                    fetchEmpleados();
+                    fetchEmpleados(false);
                 } else {
                     setLoading(false);
                 }
@@ -85,61 +88,55 @@ export default function EmpleadosScreen() {
     };
 
     const handleDelete = (empleado: Empleado) => {
-        Alert.alert(
+        confirmAction(
             'Eliminar Empleado',
-            `¿Estás seguro de eliminar a "${empleado.nombre}"?`,
-            [
-                { text: 'Cancelar', style: 'cancel' },
-                {
-                    text: 'Eliminar',
-                    style: 'destructive',
-                    onPress: async () => {
-                        try {
-                            // Check for pending/future appointments
-                            const today = new Date().toISOString();
-                            const { data: pending } = await supabase
-                                .from('citas')
-                                .select('id')
-                                .eq('empleado_id', empleado.id)
-                                .or('estado.eq.pendiente,estado.eq.confirmada,estado.eq.en_proceso')
-                                .gte('fecha_hora_inicio', today);
+            `¿Estás seguro de eliminar a "${empleado.nombre}"? Esta acción no se puede deshacer.`,
+            async () => {
+                try {
+                    const today = new Date().toISOString();
+                    const { data: pending } = await supabase
+                        .from('citas')
+                        .select('id')
+                        .eq('empleado_id', empleado.id)
+                        .or('estado.eq.pendiente,estado.eq.confirmada,estado.eq.en_proceso')
+                        .gte('fecha_hora_inicio', today);
 
-                            if (pending && pending.length > 0) {
-                                Alert.alert(
-                                    'No se puede eliminar',
-                                    `${empleado.nombre} tiene ${pending.length} cita(s) pendiente(s). Reasígnalas primero.`
-                                );
-                                return;
-                            }
+                    if (pending && pending.length > 0) {
+                        Alert.alert('No se puede eliminar', `${empleado.nombre} tiene ${pending.length} cita(s) pendiente(s). Reasignalas primero.`);
+                        return;
+                    }
 
-                            // Delete related records first
-                            await supabase
-                                .from('empleado_servicios')
-                                .delete()
-                                .eq('empleado_id', empleado.id);
+                    await supabase.from('empleado_servicios').delete().eq('empleado_id', empleado.id);
+                    await supabase.from('citas').delete().eq('empleado_id', empleado.id);
 
-                            // Delete past/cancelled appointments
-                            await supabase
-                                .from('citas')
-                                .delete()
-                                .eq('empleado_id', empleado.id);
+                    const { error: delError } = await supabase
+                        .from('empleados')
+                        .delete()
+                        .eq('id', empleado.id)
+                        .eq('negocio_id', negocioId);
+                    if (delError) throw delError;
 
-                            // Delete employee
-                            const { error: delError } = await supabase
-                                .from('empleados')
-                                .delete()
-                                .eq('id', empleado.id)
-                                .eq('negocio_id', negocioId);
-                            if (delError) throw delError;
-
-                            fetchEmpleados();
-                        } catch (err: any) {
-                            Alert.alert('Error', err.message || 'No se pudo eliminar el empleado');
-                        }
-                    },
-                },
-            ]
+                    fetchEmpleados(true);
+                } catch (err: any) {
+                    Alert.alert('Error', err.message || 'No se pudo eliminar el empleado');
+                }
+            }
         );
+    };
+
+    const handleToggleDisponible = async (emp: Empleado) => {
+        const newDisponible = !emp.disponible;
+        try {
+            const { error } = await supabase
+                .from('empleados')
+                .update({ disponible: newDisponible })
+                .eq('id', emp.id);
+            if (error) throw error;
+            // Optimistic update
+            setEmpleados(prev => prev.map(e => e.id === emp.id ? { ...e, disponible: newDisponible } : e));
+        } catch (err: any) {
+            Alert.alert('Error', err.message || 'No se pudo actualizar la disponibilidad');
+        }
     };
 
     const openEdit = (emp: Empleado) => {
@@ -157,21 +154,17 @@ export default function EmpleadosScreen() {
     return (
         <KyrosScreen title="Empleados">
             <ScrollView style={styles.container}>
-                {/* Botón nuevo */}
-                <KyrosCard>
-                    <KyrosButton
-                        mode="contained"
-                        icon="account-plus"
-                        onPress={openCreate}
-                    >
+                {/* Add Button */}
+                <View style={styles.topSection}>
+                    <KyrosButton mode="contained" icon="account-plus" onPress={openCreate}>
                         Agregar Empleado
                     </KyrosButton>
-                </KyrosCard>
+                </View>
 
-                {/* Estado de carga */}
+                {/* Loading */}
                 {loading && (
                     <View style={styles.centerState}>
-                        <ActivityIndicator size="large" color={theme.colors.primary} />
+                        <ActivityIndicator size="large" color="#38bdf8" />
                         <Text style={styles.stateText}>Cargando empleados...</Text>
                     </View>
                 )}
@@ -179,86 +172,68 @@ export default function EmpleadosScreen() {
                 {/* Error */}
                 {!loading && error && error.toLowerCase().includes('negocio') ? (
                     <View style={styles.centerState}>
-                        <MaterialIcons name="storefront" size={64} color="#888" />
-                        <Text style={[styles.stateText, { color: '#555', fontSize: 16, marginBottom: 8 }]}>
-                            Aún no tienes sucursales creadas
-                        </Text>
-                        <Text style={[styles.stateText, { marginTop: 0, paddingHorizontal: 20 }]}>
-                            Agrega una sucursal en el panel de Sucursales para poder agregar empleados.
-                        </Text>
+                        <MaterialIcons name="storefront" size={64} color="#64748b" />
+                        <Text style={[styles.stateText, { fontSize: 16, marginBottom: 8 }]}>Aún no tienes sucursales</Text>
+                        <Text style={[styles.stateText, { marginTop: 0, paddingHorizontal: 20 }]}>Agrega una sucursal para poder agregar empleados.</Text>
                     </View>
                 ) : !loading && error && (
                     <View style={styles.centerState}>
-                        <MaterialIcons name="error-outline" size={64} color="#d32f2f" />
-                        <Text style={[styles.stateText, { color: '#d32f2f' }]}>{error}</Text>
-                        <KyrosButton onPress={fetchEmpleados} style={{ marginTop: 16 }}>
-                            Reintentar
-                        </KyrosButton>
+                        <MaterialIcons name="error-outline" size={64} color="#ef4444" />
+                        <Text style={[styles.stateText, { color: '#ef4444' }]}>{error}</Text>
+                        <KyrosButton onPress={() => fetchEmpleados(true)} style={{ marginTop: 16 }}>Reintentar</KyrosButton>
                     </View>
                 )}
 
-                {/* Empty state */}
+                {/* Empty */}
                 {!loading && !error && empleados.length === 0 && (
                     <View style={styles.centerState}>
-                        <MaterialIcons name="person-add" size={64} color="#888" />
+                        <MaterialIcons name="person-add" size={64} color="#64748b" />
                         <Text style={styles.stateText}>No hay empleados registrados</Text>
-                        <KyrosButton onPress={openCreate} style={{ marginTop: 16 }}>
-                            Agregar Empleado
-                        </KyrosButton>
+                        <KyrosButton onPress={openCreate} style={{ marginTop: 16 }}>Agregar Empleado</KyrosButton>
                     </View>
                 )}
 
-                {/* Resumen */}
+                {/* Employee List */}
                 {!loading && !error && empleados.length > 0 && (
-                    <>
-                        <KyrosCard title="Resumen">
-                            <View style={styles.statsContainer}>
-                                <View style={styles.statItem}>
-                                    <Text variant="headlineMedium" style={{ color: theme.colors.primary, fontWeight: 'bold' }}>
-                                        {empleados.length}
-                                    </Text>
-                                    <Text variant="bodyMedium">Total</Text>
+                    <View style={styles.listSection}>
+                        <View style={styles.sectionHeader}>
+                            <MaterialIcons name="groups" size={18} color="#38bdf8" />
+                            <Text style={styles.sectionTitle}>Equipo ({empleados.length})</Text>
+                        </View>
+
+                        {empleados.map(emp => (
+                            <View key={emp.id} style={styles.empCard}>
+                                <View style={styles.avatarCircle}>
+                                    <Text style={styles.avatarText}>{getInitials(emp.nombre)}</Text>
                                 </View>
-                                <View style={styles.statItem}>
-                                    <Text variant="headlineMedium" style={{ color: theme.colors.primary, fontWeight: 'bold' }}>
-                                        {activos.length}
-                                    </Text>
-                                    <Text variant="bodyMedium">Activos</Text>
+                                <View style={styles.empInfo}>
+                                    <Text style={styles.empName}>{emp.nombre}</Text>
+                                    <Text style={styles.empMeta}>{emp.especialidad || 'Sin especialidad'} • {emp.sucursal_nombre}</Text>
+                                </View>
+                                <View style={styles.empActions}>
+                                    <TouchableOpacity
+                                        onPress={() => handleToggleDisponible(emp)}
+                                        style={[styles.actionBtn, {
+                                            backgroundColor: emp.disponible ? 'rgba(16,185,129,0.15)' : 'rgba(100,116,139,0.1)',
+                                            borderColor: emp.disponible ? '#10b981' : '#475569',
+                                        }]}
+                                    >
+                                        <MaterialIcons
+                                            name={emp.disponible ? 'check-circle' : 'pause-circle-filled'}
+                                            size={18}
+                                            color={emp.disponible ? '#10b981' : '#64748b'}
+                                        />
+                                    </TouchableOpacity>
+                                    <TouchableOpacity onPress={() => openEdit(emp)} style={styles.actionBtn}>
+                                        <MaterialIcons name="edit" size={18} color="#94a3b8" />
+                                    </TouchableOpacity>
+                                    <TouchableOpacity onPress={() => handleDelete(emp)} style={[styles.actionBtn, styles.actionDelete]}>
+                                        <MaterialIcons name="delete" size={18} color="#ef4444" />
+                                    </TouchableOpacity>
                                 </View>
                             </View>
-                        </KyrosCard>
-
-                        <KyrosCard title="Lista de empleados">
-                            {empleados.map((emp, index) => (
-                                <React.Fragment key={emp.id}>
-                                    <List.Item
-                                        title={emp.nombre}
-                                        description={`${emp.especialidad || 'Sin especialidad'} • ${emp.sucursal_nombre}`}
-                                        left={props => (
-                                            <Avatar.Text
-                                                {...props}
-                                                size={40}
-                                                label={getInitials(emp.nombre)}
-                                                style={{ backgroundColor: theme.colors.secondaryContainer }}
-                                                color={theme.colors.onSecondaryContainer}
-                                            />
-                                        )}
-                                        right={props => (
-                                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                                <TouchableOpacity onPress={() => openEdit(emp)}>
-                                                    <List.Icon {...props} icon="pencil" color={theme.colors.primary} />
-                                                </TouchableOpacity>
-                                                <TouchableOpacity onPress={() => handleDelete(emp)}>
-                                                    <List.Icon {...props} icon="delete" color="#d32f2f" />
-                                                </TouchableOpacity>
-                                            </View>
-                                        )}
-                                    />
-                                    {index < empleados.length - 1 && <Divider />}
-                                </React.Fragment>
-                            ))}
-                        </KyrosCard>
-                    </>
+                        ))}
+                    </View>
                 )}
 
                 <View style={{ height: 80 }} />
@@ -274,7 +249,7 @@ export default function EmpleadosScreen() {
                 onSaved={() => {
                     setModalVisible(false);
                     setSelectedEmpleado(null);
-                    fetchEmpleados();
+                    fetchEmpleados(true);
                 }}
             />
         </KyrosScreen>
@@ -285,13 +260,83 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
     },
-    statsContainer: {
-        flexDirection: 'row',
-        justifyContent: 'space-around',
-        paddingVertical: 8,
+    topSection: {
+        backgroundColor: '#111827',
+        borderRadius: 16,
+        padding: 16,
+        margin: 16,
+        marginBottom: 8,
+        borderWidth: 1,
+        borderColor: '#1e293b',
     },
-    statItem: {
+    listSection: {
+        paddingHorizontal: 16,
+        marginTop: 8,
+    },
+    sectionHeader: {
+        flexDirection: 'row',
         alignItems: 'center',
+        gap: 8,
+        marginBottom: 14,
+    },
+    sectionTitle: {
+        color: '#94a3b8',
+        fontSize: 13,
+        fontWeight: '700',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+    empCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#111827',
+        borderRadius: 14,
+        padding: 14,
+        marginBottom: 10,
+        borderWidth: 1,
+        borderColor: '#1e293b',
+    },
+    avatarCircle: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: 'rgba(56, 189, 248, 0.15)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 14,
+    },
+    avatarText: {
+        color: '#38bdf8',
+        fontWeight: '700',
+        fontSize: 16,
+    },
+    empInfo: {
+        flex: 1,
+    },
+    empName: {
+        color: '#f1f5f9',
+        fontWeight: '600',
+        fontSize: 15,
+    },
+    empMeta: {
+        color: '#64748b',
+        fontSize: 13,
+        marginTop: 2,
+    },
+    empActions: {
+        flexDirection: 'row',
+        gap: 6,
+    },
+    actionBtn: {
+        padding: 8,
+        borderRadius: 10,
+        backgroundColor: '#1e293b',
+        borderWidth: 1,
+        borderColor: '#334155',
+    },
+    actionDelete: {
+        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+        borderColor: '#ef4444',
     },
     centerState: {
         alignItems: 'center',
@@ -300,7 +345,7 @@ const styles = StyleSheet.create({
     },
     stateText: {
         marginTop: 16,
-        color: '#888',
+        color: '#64748b',
         textAlign: 'center',
     },
 });

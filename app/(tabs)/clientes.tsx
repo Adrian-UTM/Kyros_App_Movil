@@ -11,6 +11,7 @@ import { supabase } from '../../lib/supabaseClient';
 import { useApp } from '../../lib/AppContext';
 import ClienteNuevoModal from '../../components/ClienteNuevoModal';
 import ClienteEditModal from '../../components/ClienteEditModal';
+import { confirmAction } from '../../lib/confirm';
 
 interface Cliente {
     id: number;
@@ -34,9 +35,9 @@ export default function ClientesScreen() {
 
     const { negocioId, sucursalId, rol, isLoading: appLoading } = useApp();
 
-    const fetchClientes = useCallback(async () => {
+    const fetchClientes = useCallback(async (showIndicator = true) => {
         if (!negocioId) return;
-        setLoading(true);
+        if (showIndicator) setLoading(true);
         setError(null);
 
         try {
@@ -63,13 +64,13 @@ export default function ClientesScreen() {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [negocioId, sucursalId, rol]);
 
     useFocusEffect(
         useCallback(() => {
             if (!appLoading) {
                 if (negocioId) {
-                    fetchClientes();
+                    fetchClientes(false);
                 } else {
                     setLoading(false);
                 }
@@ -102,39 +103,30 @@ export default function ClientesScreen() {
     };
 
     const handleDelete = (cliente: Cliente) => {
-        Alert.alert(
+        confirmAction(
             'Eliminar Cliente',
-            `¿Estás seguro de eliminar a "${cliente.nombre}"?`,
-            [
-                { text: 'Cancelar', style: 'cancel' },
-                {
-                    text: 'Eliminar',
-                    style: 'destructive',
-                    onPress: async () => {
-                        try {
-                            const { error: delError } = await supabase
-                                .from('clientes_bot')
-                                .delete()
-                                .eq('id', cliente.id)
-                                .eq('negocio_id', negocioId);
-                            if (delError) throw delError;
-
-                            // Refetch inmediato tras borrar
-                            fetchClientes();
-                        } catch (err: any) {
-                            Alert.alert('Error', err.message || 'No se pudo eliminar el cliente');
-                        }
-                    },
-                },
-            ]
+            `¿Estás seguro de eliminar a "${cliente.nombre}"? Esta acción no se puede deshacer.`,
+            async () => {
+                try {
+                    const { error: delError } = await supabase
+                        .from('clientes_bot')
+                        .delete()
+                        .eq('id', cliente.id)
+                        .eq('negocio_id', negocioId);
+                    if (delError) throw delError;
+                    fetchClientes(true);
+                } catch (err: any) {
+                    Alert.alert('Error', err.message || 'No se pudo eliminar el cliente');
+                }
+            }
         );
     };
 
     return (
         <KyrosScreen title="Clientes">
             <ScrollView style={styles.container}>
-                {/* Barra de búsqueda */}
-                <KyrosCard>
+                {/* Search + Add */}
+                <View style={styles.topSection}>
                     <TextInput
                         label="Buscar cliente"
                         mode="outlined"
@@ -142,7 +134,10 @@ export default function ClientesScreen() {
                         onChangeText={setSearchQuery}
                         left={<TextInput.Icon icon="magnify" />}
                         style={styles.searchInput}
-                        theme={{ colors: { primary: theme.colors.primary } }}
+                        textColor="#e2e8f0"
+                        outlineColor="#334155"
+                        activeOutlineColor="#38bdf8"
+                        theme={{ colors: { onSurfaceVariant: '#94a3b8' } }}
                     />
                     <KyrosButton
                         mode="contained"
@@ -152,12 +147,12 @@ export default function ClientesScreen() {
                     >
                         Nuevo Cliente
                     </KyrosButton>
-                </KyrosCard>
+                </View>
 
-                {/* Estado de carga */}
+                {/* Loading */}
                 {loading && (
                     <View style={styles.centerState}>
-                        <ActivityIndicator size="large" color={theme.colors.primary} />
+                        <ActivityIndicator size="large" color="#38bdf8" />
                         <Text style={styles.stateText}>Cargando clientes...</Text>
                     </View>
                 )}
@@ -165,76 +160,61 @@ export default function ClientesScreen() {
                 {/* Error */}
                 {!loading && error && error.toLowerCase().includes('negocio') ? (
                     <View style={styles.centerState}>
-                        <MaterialIcons name="storefront" size={64} color="#888" />
-                        <Text style={[styles.stateText, { color: '#555', fontSize: 16, marginBottom: 8 }]}>
-                            Aún no tienes sucursales creadas
-                        </Text>
-                        <Text style={[styles.stateText, { marginTop: 0, paddingHorizontal: 20 }]}>
-                            Agrega una sucursal en el panel de Sucursales para poder agregar clientes.
-                        </Text>
+                        <MaterialIcons name="storefront" size={64} color="#64748b" />
+                        <Text style={[styles.stateText, { fontSize: 16, marginBottom: 8 }]}>Aún no tienes sucursales</Text>
+                        <Text style={[styles.stateText, { marginTop: 0, paddingHorizontal: 20 }]}>Agrega una sucursal para poder agregar clientes.</Text>
                     </View>
                 ) : !loading && error && (
                     <View style={styles.centerState}>
-                        <MaterialIcons name="error-outline" size={64} color="#d32f2f" />
-                        <Text style={[styles.stateText, { color: '#d32f2f' }]}>{error}</Text>
-                        <KyrosButton onPress={fetchClientes} style={{ marginTop: 16 }}>
-                            Reintentar
-                        </KyrosButton>
+                        <MaterialIcons name="error-outline" size={64} color="#ef4444" />
+                        <Text style={[styles.stateText, { color: '#ef4444' }]}>{error}</Text>
+                        <KyrosButton onPress={fetchClientes} style={{ marginTop: 16 }}>Reintentar</KyrosButton>
                     </View>
                 )}
 
-                {/* Empty state */}
+                {/* Empty */}
                 {!loading && !error && clientes.length === 0 && (
                     <View style={styles.centerState}>
-                        <MaterialIcons name="person-add" size={64} color="#888" />
+                        <MaterialIcons name="person-add" size={64} color="#64748b" />
                         <Text style={styles.stateText}>No hay clientes registrados</Text>
-                        <KyrosButton onPress={() => setNuevoModalVisible(true)} style={{ marginTop: 16 }}>
-                            Agregar Cliente
-                        </KyrosButton>
+                        <KyrosButton onPress={() => setNuevoModalVisible(true)} style={{ marginTop: 16 }}>Agregar Cliente</KyrosButton>
                     </View>
                 )}
 
-                {/* Lista de clientes */}
+                {/* Client List */}
                 {!loading && !error && filteredClientes.length > 0 && (
-                    <KyrosCard title={`Clientes (${filteredClientes.length})`}>
-                        {filteredClientes.map((cliente, index) => (
-                            <React.Fragment key={cliente.id}>
-                                <List.Item
-                                    title={cliente.nombre}
-                                    description={cliente.telefono || 'Sin teléfono'}
-                                    left={props => (
-                                        <Avatar.Text
-                                            {...props}
-                                            size={40}
-                                            label={getInitials(cliente.nombre)}
-                                            style={{ backgroundColor: theme.colors.secondaryContainer }}
-                                            color={theme.colors.onSecondaryContainer}
-                                        />
-                                    )}
-                                    right={props => (
-                                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                            <TouchableOpacity onPress={() => {
-                                                setSelectedCliente(cliente);
-                                                setEditModalVisible(true);
-                                            }}>
-                                                <List.Icon {...props} icon="pencil" color={theme.colors.primary} />
-                                            </TouchableOpacity>
-                                            <TouchableOpacity onPress={() => handleDelete(cliente)}>
-                                                <List.Icon {...props} icon="delete" color="#d32f2f" />
-                                            </TouchableOpacity>
-                                        </View>
-                                    )}
-                                />
-                                {index < filteredClientes.length - 1 && <Divider />}
-                            </React.Fragment>
+                    <View style={styles.listSection}>
+                        <View style={styles.sectionHeader}>
+                            <MaterialIcons name="people" size={18} color="#38bdf8" />
+                            <Text style={styles.sectionTitle}>Clientes ({filteredClientes.length})</Text>
+                        </View>
+
+                        {filteredClientes.map(cliente => (
+                            <View key={cliente.id} style={styles.clientCard}>
+                                <View style={styles.avatarCircle}>
+                                    <Text style={styles.avatarText}>{getInitials(cliente.nombre)}</Text>
+                                </View>
+                                <View style={styles.clientInfo}>
+                                    <Text style={styles.clientName}>{cliente.nombre}</Text>
+                                    <Text style={styles.clientPhone}>{cliente.telefono || 'Sin teléfono'}</Text>
+                                </View>
+                                <View style={styles.clientActions}>
+                                    <TouchableOpacity onPress={() => { setSelectedCliente(cliente); setEditModalVisible(true); }} style={styles.actionBtn}>
+                                        <MaterialIcons name="edit" size={18} color="#94a3b8" />
+                                    </TouchableOpacity>
+                                    <TouchableOpacity onPress={() => handleDelete(cliente)} style={[styles.actionBtn, styles.actionDelete]}>
+                                        <MaterialIcons name="delete" size={18} color="#ef4444" />
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
                         ))}
-                    </KyrosCard>
+                    </View>
                 )}
 
-                {/* Sin resultados de búsqueda */}
+                {/* No search results */}
                 {!loading && !error && clientes.length > 0 && filteredClientes.length === 0 && (
                     <View style={styles.centerState}>
-                        <MaterialIcons name="search-off" size={48} color="#888" />
+                        <MaterialIcons name="search-off" size={48} color="#64748b" />
                         <Text style={styles.stateText}>No se encontraron clientes</Text>
                     </View>
                 )}
@@ -247,7 +227,7 @@ export default function ClientesScreen() {
                 onDismiss={() => setNuevoModalVisible(false)}
                 onClienteCreado={(newCliente) => {
                     setNuevoModalVisible(false);
-                    fetchClientes(); // Refrescar lista automáticamente
+                    fetchClientes(true);
                 }}
             />
 
@@ -262,7 +242,7 @@ export default function ClientesScreen() {
                 onClienteActualizado={(updatedCliente) => {
                     setEditModalVisible(false);
                     setSelectedCliente(null);
-                    fetchClientes(); // Refrescar lista automáticamente
+                    fetchClientes(true);
                 }}
             />
         </KyrosScreen>
@@ -273,8 +253,86 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
     },
+    topSection: {
+        backgroundColor: '#111827',
+        borderRadius: 16,
+        padding: 16,
+        margin: 16,
+        marginBottom: 8,
+        borderWidth: 1,
+        borderColor: '#1e293b',
+    },
     searchInput: {
-        backgroundColor: 'white',
+        backgroundColor: '#0f172a',
+    },
+    listSection: {
+        paddingHorizontal: 16,
+        marginTop: 8,
+    },
+    sectionHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 14,
+    },
+    sectionTitle: {
+        color: '#94a3b8',
+        fontSize: 13,
+        fontWeight: '700',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+    clientCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#111827',
+        borderRadius: 14,
+        padding: 14,
+        marginBottom: 10,
+        borderWidth: 1,
+        borderColor: '#1e293b',
+    },
+    avatarCircle: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: 'rgba(56, 189, 248, 0.15)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 14,
+    },
+    avatarText: {
+        color: '#38bdf8',
+        fontWeight: '700',
+        fontSize: 16,
+    },
+    clientInfo: {
+        flex: 1,
+    },
+    clientName: {
+        color: '#f1f5f9',
+        fontWeight: '600',
+        fontSize: 15,
+    },
+    clientPhone: {
+        color: '#64748b',
+        fontSize: 13,
+        marginTop: 2,
+    },
+    clientActions: {
+        flexDirection: 'row',
+        gap: 6,
+    },
+    actionBtn: {
+        padding: 8,
+        borderRadius: 10,
+        backgroundColor: '#1e293b',
+        borderWidth: 1,
+        borderColor: '#334155',
+    },
+    actionDelete: {
+        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+        borderColor: '#ef4444',
     },
     centerState: {
         alignItems: 'center',
@@ -283,7 +341,7 @@ const styles = StyleSheet.create({
     },
     stateText: {
         marginTop: 16,
-        color: '#888',
+        color: '#64748b',
         textAlign: 'center',
     },
 });

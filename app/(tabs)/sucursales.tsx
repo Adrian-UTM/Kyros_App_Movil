@@ -18,7 +18,29 @@ interface Sucursal {
     telefono: string | null;
     cuenta_email: string | null;
     cuenta_password: string | null;
+    hora_apertura?: string | null;
+    hora_cierre?: string | null;
+    descanso_inicio?: string | null;
+    descanso_fin?: string | null;
+    dias_abiertos?: number[] | null;
 }
+
+const formatTime12 = (time24?: string | null) => {
+    if (!time24) return '';
+    const [h, m] = time24.split(':').map(Number);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const h12 = h > 12 ? h - 12 : (h === 0 ? 12 : h);
+    return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+};
+
+const formatSchedule = (suc: Sucursal) => {
+    if (!suc.hora_apertura || !suc.hora_cierre) return 'Sin horario configurado';
+    let text = `${formatTime12(suc.hora_apertura)} a ${formatTime12(suc.hora_cierre)}`;
+    if (suc.descanso_inicio && suc.descanso_fin) {
+        text += ` (Descanso: ${formatTime12(suc.descanso_inicio)} a ${formatTime12(suc.descanso_fin)})`;
+    }
+    return text;
+};
 
 export default function SucursalesScreen() {
     const theme = useTheme();
@@ -40,7 +62,7 @@ export default function SucursalesScreen() {
         try {
             let query = supabase
                 .from('sucursales')
-                .select('id, nombre, direccion, telefono, cuenta_email, cuenta_password')
+                .select('id, nombre, direccion, telefono, cuenta_email, cuenta_password, hora_apertura, hora_cierre, descanso_inicio, descanso_fin, dias_abiertos')
                 .eq('negocio_id', negocioId);
 
             if (rol === 'sucursal' && sucursalId) {
@@ -240,8 +262,20 @@ export default function SucursalesScreen() {
                             <React.Fragment key={suc.id}>
                                 <List.Item
                                     title={suc.nombre}
-                                    description={`${suc.direccion || 'Sin dirección'}\n${suc.telefono || 'Sin teléfono'}`}
-                                    descriptionNumberOfLines={2}
+                                    titleStyle={{ color: '#f1f5f9', fontWeight: 'bold' }}
+                                    description={() => (
+                                        <View style={{ marginTop: 4 }}>
+                                            <Text style={{ color: '#94a3b8', fontSize: 13, marginBottom: 4 }}>
+                                                {suc.direccion || 'Sin dirección'} • {suc.telefono || 'Sin teléfono'}
+                                            </Text>
+                                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                                <MaterialIcons name="schedule" size={14} color="#38bdf8" style={{ marginRight: 4 }} />
+                                                <Text style={{ color: '#38bdf8', fontSize: 13 }}>
+                                                    {formatSchedule(suc)}
+                                                </Text>
+                                            </View>
+                                        </View>
+                                    )}
                                     left={props => (
                                         <List.Icon {...props} icon="store" color={theme.colors.primary} />
                                     )}

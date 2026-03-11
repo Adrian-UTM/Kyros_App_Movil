@@ -1,11 +1,9 @@
-import React, { useState } from 'react';
-import { View, StyleSheet, Image, TouchableOpacity, ScrollView, Platform, KeyboardAvoidingView, Alert } from 'react-native';
-import { TextInput, Text, HelperText, Icon } from 'react-native-paper';
+import React, { useState, useRef, useEffect } from 'react';
+import { View, StyleSheet, Image, TouchableOpacity, ScrollView, Platform, KeyboardAvoidingView, Alert, Animated } from 'react-native';
+import { TextInput, Text, Icon, Button } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Session } from '../lib/session';
-import KyrosCard from '../components/KyrosCard';
-import KyrosButton from '../components/KyrosButton';
 
 export default function RegisterScreen() {
     const router = useRouter();
@@ -19,13 +17,26 @@ export default function RegisterScreen() {
     const [successMessage, setSuccessMessage] = useState('');
     const [imageUri, setImageUri] = useState<string | null>(null);
 
+    // Animations
+    const logoAnim = useRef(new Animated.Value(0)).current;
+    const formAnim = useRef(new Animated.Value(0)).current;
+    const buttonAnim = useRef(new Animated.Value(0)).current;
+
+    useEffect(() => {
+        Animated.stagger(200, [
+            Animated.spring(logoAnim, { toValue: 1, tension: 50, friction: 8, useNativeDriver: true }),
+            Animated.spring(formAnim, { toValue: 1, tension: 50, friction: 8, useNativeDriver: true }),
+            Animated.spring(buttonAnim, { toValue: 1, tension: 50, friction: 8, useNativeDriver: true }),
+        ]).start();
+    }, []);
+
     const pickImage = async () => {
         try {
             const result = await ImagePicker.launchImageLibraryAsync({
                 mediaTypes: ImagePicker.MediaTypeOptions.Images,
                 allowsEditing: true,
                 aspect: [1, 1],
-                quality: 0.5, // lower quality for quicker uploads
+                quality: 0.5,
             });
 
             if (!result.canceled && result.assets && result.assets.length > 0) {
@@ -62,12 +73,9 @@ export default function RegisterScreen() {
         setLoading(false);
 
         if (result.success) {
-            // If there's an error message with success, it means email confirmation is needed
             if (result.error) {
                 setSuccessMessage(result.error);
-                // Stay on page to show the message, user can go to login manually
             } else {
-                // Registration complete, go to login
                 router.replace(`/?email=${encodeURIComponent(email)}`);
             }
         } else {
@@ -90,15 +98,36 @@ export default function RegisterScreen() {
         }
     };
 
+    const inputTheme = {
+        colors: {
+            onSurfaceVariant: '#94a3b8',
+            outline: 'transparent',
+            primary: '#3b82f6',
+        },
+        roundness: 14,
+    };
+
     return (
         <KeyboardAvoidingView
             behavior={Platform.OS === "ios" ? "padding" : "height"}
             style={styles.container}
         >
-            <ScrollView contentContainerStyle={styles.scrollContent}>
-                <View style={styles.contentContainer}>
-                    <KyrosCard style={styles.card}>
-                        <View style={styles.header}>
+            {/* Subtle background glow */}
+            <View style={styles.glowCircle} />
+            <View style={styles.glowCircle2} />
+
+            <ScrollView
+                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+            >
+                <View style={styles.content}>
+                    <View style={styles.card}>
+                        {/* Logo */}
+                        <Animated.View style={[styles.logoContainer, {
+                            opacity: logoAnim,
+                            transform: [{ translateY: logoAnim.interpolate({ inputRange: [0, 1], outputRange: [-30, 0] }) }],
+                        }]}>
                             <Image
                                 source={require('../assets/images/logo-text.png')}
                                 style={styles.logo}
@@ -106,91 +135,139 @@ export default function RegisterScreen() {
                             />
                             <Text style={styles.title}>Crear Cuenta</Text>
                             <Text style={styles.subtitle}>Únete a la comunidad de Kyros</Text>
-                        </View>
+                        </Animated.View>
 
-                        <View style={styles.avatarContainer}>
+                        {/* Avatar */}
+                        <Animated.View style={[styles.avatarSection, {
+                            opacity: logoAnim,
+                            transform: [{ scale: logoAnim.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1] }) }],
+                        }]}>
                             <TouchableOpacity style={styles.avatarCircle} activeOpacity={0.7} onPress={pickImage}>
                                 {imageUri ? (
-                                    <Image source={{ uri: imageUri }} style={{ width: 100, height: 100, borderRadius: 50 }} />
+                                    <Image source={{ uri: imageUri }} style={styles.avatarImage} />
                                 ) : (
-                                    <Icon source="camera-plus" size={40} color="#757575" />
+                                    <View style={styles.avatarPlaceholder}>
+                                        <Icon source="camera-plus" size={32} color="#475569" />
+                                    </View>
                                 )}
+                                <View style={styles.avatarBadge}>
+                                    <Icon source="pencil" size={14} color="#fff" />
+                                </View>
                             </TouchableOpacity>
                             <TouchableOpacity onPress={pickImage}>
                                 <Text style={styles.avatarText}>
-                                    {imageUri ? 'Cambiar foto de perfil' : 'Seleccionar foto de perfil'}
+                                    {imageUri ? 'Cambiar foto' : 'Agregar foto'}
                                 </Text>
                             </TouchableOpacity>
-                        </View>
+                        </Animated.View>
 
-                        <View style={styles.form}>
+                        {/* Form */}
+                        <Animated.View style={[styles.formContainer, {
+                            opacity: formAnim,
+                            transform: [{ translateY: formAnim.interpolate({ inputRange: [0, 1], outputRange: [30, 0] }) }],
+                        }]}>
                             <TextInput
                                 label="Nombre Completo"
                                 value={name}
                                 onChangeText={(text) => { setName(text); setError(''); setSuccessMessage(''); }}
-                                mode="outlined"
+                                mode="flat"
                                 style={styles.input}
                                 autoCapitalize="words"
-                                error={!!error && !name}
+                                textColor="#e2e8f0"
+                                underlineColor="transparent"
+                                activeUnderlineColor="#3b82f6"
+                                left={<TextInput.Icon icon="account-outline" color="#94a3b8" />}
+                                theme={inputTheme}
                             />
 
                             <TextInput
-                                label="Email"
+                                label="Correo electrónico"
                                 value={email}
                                 onChangeText={(text) => { setEmail(text); setError(''); setSuccessMessage(''); }}
-                                mode="outlined"
+                                mode="flat"
                                 style={styles.input}
                                 keyboardType="email-address"
                                 autoCapitalize="none"
-                                error={!!error && !email}
+                                textColor="#e2e8f0"
+                                underlineColor="transparent"
+                                activeUnderlineColor="#3b82f6"
+                                left={<TextInput.Icon icon="email-outline" color="#94a3b8" />}
+                                theme={inputTheme}
                             />
 
                             <TextInput
                                 label="Contraseña"
                                 value={password}
                                 onChangeText={(text) => { setPassword(text); setError(''); setSuccessMessage(''); }}
-                                mode="outlined"
+                                mode="flat"
                                 secureTextEntry={hidePassword}
-                                right={<TextInput.Icon icon={hidePassword ? "eye" : "eye-off"} onPress={() => setHidePassword(!hidePassword)} />}
+                                right={<TextInput.Icon icon={hidePassword ? "eye-outline" : "eye-off-outline"} color="#94a3b8" onPress={() => setHidePassword(!hidePassword)} />}
+                                left={<TextInput.Icon icon="lock-outline" color="#94a3b8" />}
                                 style={styles.input}
-                                error={!!error && !password}
+                                textColor="#e2e8f0"
+                                underlineColor="transparent"
+                                activeUnderlineColor="#3b82f6"
+                                theme={inputTheme}
                             />
-                            <HelperText type="info" visible={true} style={styles.helperText}>
-                                Mínimo 6 caracteres
-                            </HelperText>
+
+                            <Text style={styles.helperText}>Mínimo 6 caracteres</Text>
 
                             <TextInput
                                 label="Confirmar Contraseña"
                                 value={confirmPassword}
                                 onChangeText={(text) => { setConfirmPassword(text); setError(''); setSuccessMessage(''); }}
-                                mode="outlined"
+                                mode="flat"
                                 secureTextEntry={hidePassword}
+                                left={<TextInput.Icon icon="lock-check-outline" color="#94a3b8" />}
                                 style={styles.input}
-                                error={!!error && password !== confirmPassword}
+                                textColor="#e2e8f0"
+                                underlineColor="transparent"
+                                activeUnderlineColor="#3b82f6"
+                                theme={inputTheme}
                             />
 
-                            <HelperText type="error" visible={!!error} style={styles.errorText}>
-                                {error}
-                            </HelperText>
+                            {!!error && (
+                                <View style={styles.errorContainer}>
+                                    <Text style={styles.errorText}>{error}</Text>
+                                </View>
+                            )}
 
-                            <HelperText type="info" visible={!!successMessage} style={styles.successText}>
-                                {successMessage}
-                            </HelperText>
+                            {!!successMessage && (
+                                <View style={styles.successContainer}>
+                                    <Text style={styles.successText}>{successMessage}</Text>
+                                </View>
+                            )}
+                        </Animated.View>
 
-                            <KyrosButton
+                        {/* Button */}
+                        <Animated.View style={[styles.buttonContainer, {
+                            opacity: buttonAnim,
+                            transform: [{ scale: buttonAnim.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1] }) }],
+                        }]}>
+                            <Button
+                                mode="contained"
                                 onPress={handleRegister}
                                 loading={loading}
                                 disabled={loading}
-                                style={styles.button}
+                                style={styles.registerButton}
+                                labelStyle={styles.registerButtonLabel}
+                                contentStyle={styles.registerButtonContent}
+                                buttonColor="#2563eb"
                             >
-                                {loading ? 'Registrando...' : 'Registrarme'}
-                            </KyrosButton>
-                        </View>
+                                {loading ? 'Registrando...' : 'Crear Cuenta'}
+                            </Button>
+                        </Animated.View>
 
-                        <View style={styles.footer}>
-                            <Text variant="bodyMedium">¿Ya tienes cuenta? <Text style={styles.link} onPress={() => router.replace('/')}>Inicia Sesión</Text></Text>
-                        </View>
-                    </KyrosCard>
+                        {/* Footer */}
+                        <Animated.View style={[styles.footer, { opacity: buttonAnim }]}>
+                            <Text style={styles.footerText}>
+                                ¿Ya tienes cuenta?{' '}
+                                <Text style={styles.link} onPress={() => router.replace('/')}>
+                                    Inicia Sesión
+                                </Text>
+                            </Text>
+                        </Animated.View>
+                    </View>
                 </View>
             </ScrollView>
         </KeyboardAvoidingView>
@@ -200,86 +277,173 @@ export default function RegisterScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f5f5f5',
+        backgroundColor: '#0a0f1e',
+    },
+    glowCircle: {
+        position: 'absolute',
+        top: -80,
+        right: -80,
+        width: 300,
+        height: 300,
+        borderRadius: 150,
+        backgroundColor: 'rgba(37, 99, 235, 0.06)',
+    },
+    glowCircle2: {
+        position: 'absolute',
+        bottom: -60,
+        left: -60,
+        width: 250,
+        height: 250,
+        borderRadius: 125,
+        backgroundColor: 'rgba(37, 99, 235, 0.04)',
     },
     scrollContent: {
         flexGrow: 1,
         justifyContent: 'center',
-        padding: 20,
+        paddingVertical: 40,
     },
-    contentContainer: {
+    content: {
         width: '100%',
-        maxWidth: 400,
+        maxWidth: 420,
         alignSelf: 'center',
+        paddingHorizontal: 20,
     },
     card: {
-        padding: 10,
+        backgroundColor: '#111827',
+        borderRadius: 28,
+        paddingVertical: 32,
+        paddingHorizontal: 24,
     },
-    header: {
+    logoContainer: {
         alignItems: 'center',
-        marginBottom: 20,
+        marginBottom: 24,
     },
     logo: {
-        width: 200,
-        height: 60,
-        marginBottom: 15,
+        width: 240,
+        height: 75,
+        marginBottom: 16,
     },
     title: {
+        color: '#f1f5f9',
         fontSize: 24,
-        fontWeight: '500',
-        marginBottom: 5,
+        fontWeight: '700',
+        marginBottom: 6,
+        letterSpacing: 0.3,
     },
     subtitle: {
-        color: '#666',
+        color: '#94a3b8',
         fontSize: 14,
+        letterSpacing: 0.3,
     },
-    avatarContainer: {
+    avatarSection: {
         alignItems: 'center',
-        marginBottom: 25,
+        marginBottom: 28,
     },
     avatarCircle: {
-        width: 100,
-        height: 100,
-        borderRadius: 50,
-        backgroundColor: '#e0e0e0',
+        width: 90,
+        height: 90,
+        borderRadius: 45,
+        marginBottom: 8,
+        position: 'relative',
+    },
+    avatarImage: {
+        width: 90,
+        height: 90,
+        borderRadius: 45,
+    },
+    avatarPlaceholder: {
+        width: 90,
+        height: 90,
+        borderRadius: 45,
+        backgroundColor: '#111827',
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 10,
+    },
+    avatarBadge: {
+        position: 'absolute',
+        bottom: 2,
+        right: 2,
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        backgroundColor: '#2563eb',
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     avatarText: {
-        color: '#666',
-        fontSize: 14,
+        color: '#60a5fa',
+        fontSize: 13,
+        fontWeight: '600',
     },
-    form: {
-        width: '100%',
+    formContainer: {
+        marginBottom: 24,
+        gap: 12,
     },
     input: {
-        marginBottom: 10,
-        backgroundColor: 'white',
+        backgroundColor: '#1a2234',
+        borderRadius: 14,
+        fontSize: 15,
+        overflow: 'hidden',
     },
     helperText: {
-        marginTop: -10,
-        marginBottom: 5,
+        color: '#475569',
+        fontSize: 12,
+        marginTop: -4,
+        marginLeft: 16,
+    },
+    errorContainer: {
+        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+        borderRadius: 10,
+        paddingVertical: 10,
+        paddingHorizontal: 14,
+        marginTop: 4,
     },
     errorText: {
-        marginBottom: 10,
+        color: '#f87171',
+        fontSize: 13,
         textAlign: 'center',
+    },
+    successContainer: {
+        backgroundColor: 'rgba(34, 197, 94, 0.1)',
+        borderRadius: 10,
+        paddingVertical: 10,
+        paddingHorizontal: 14,
+        marginTop: 4,
     },
     successText: {
-        marginBottom: 10,
+        color: '#4ade80',
+        fontSize: 13,
         textAlign: 'center',
-        color: '#4caf50',
     },
-    button: {
-        marginTop: 10,
+    buttonContainer: {
+        marginBottom: 24,
+    },
+    registerButton: {
+        borderRadius: 14,
+        elevation: 8,
+        shadowColor: '#2563eb',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 12,
+    },
+    registerButtonContent: {
+        paddingVertical: 6,
+    },
+    registerButtonLabel: {
+        fontSize: 16,
+        fontWeight: '700',
+        letterSpacing: 0.5,
     },
     footer: {
-        marginTop: 20,
         alignItems: 'center',
-        marginBottom: 10,
+        paddingBottom: 20,
+    },
+    footerText: {
+        color: '#94a3b8',
+        fontSize: 14,
     },
     link: {
-        color: '#1976d2',
-        fontWeight: 'bold',
+        color: '#60a5fa',
+        fontWeight: '700',
     },
 });

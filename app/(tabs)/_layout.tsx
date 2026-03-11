@@ -4,7 +4,7 @@ import { Session } from "../../lib/session";
 import { useApp } from "../../lib/AppContext";
 import { MaterialIcons } from '@expo/vector-icons';
 import { useTheme, Text, Button } from 'react-native-paper';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, Image } from 'react-native';
 
 // Menu items matching Angular dashboard (ordering follows Angular)
 // Angular: Calendario, Servicios, Empleados, Sucursales, Clientes, Estadísticas, Mi Perfil
@@ -14,29 +14,21 @@ export default function TabLayout() {
     const router = useRouter();
     const rootNavigationState = useRootNavigationState();
     const theme = useTheme();
-    const { rol, isLoading: appLoading, profileMissing, refreshProfile } = useApp();
-    const [isChecking, setIsChecking] = useState(true);
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const { rol, isLoading: appLoading, profileMissing, refreshProfile, isAuthenticated } = useApp();
 
     useEffect(() => {
         // Wait for the navigation state to be ready
         if (!rootNavigationState?.key) return;
 
-        const checkAuth = async () => {
-            setIsChecking(true);
-            const hasSession = await Session.check();
-            setIsAuthenticated(hasSession);
-            setIsChecking(false);
+        // Redirect to login if AppContext says we are not authenticated. 
+        // We rely entirely on the centralized AppContext for auth state to avoid Supabase storage deadlocks.
+        if (!appLoading && !isAuthenticated) {
+            router.replace('/');
+        }
+    }, [rootNavigationState?.key, isAuthenticated, appLoading]);
 
-            if (!hasSession) {
-                router.replace('/');
-            }
-        };
-        checkAuth();
-    }, [rootNavigationState?.key]);
-
-    // Show loading while checking auth or app context
-    if (isChecking || appLoading) {
+    // Show loading while app context is initializing or authenticating
+    if (appLoading) {
         return (
             <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.background }}>
                 <ActivityIndicator size="large" color={theme.colors.primary} />
@@ -68,14 +60,17 @@ export default function TabLayout() {
     }
 
     // Filter tabs based on role (like Angular does)
-    const showSucursales = rol !== 'sucursal';
+    // No showSucursales needed - tab will be hidden
 
     return (
         <Tabs screenOptions={{
-            headerShown: true,
-            headerStyle: { backgroundColor: theme.colors.primary },
-            headerTintColor: '#fff',
-            tabBarActiveTintColor: theme.colors.primary,
+            headerShown: false,
+            tabBarActiveTintColor: '#3b82f6', // Kyros blue
+            tabBarInactiveTintColor: '#64748b',
+            tabBarStyle: {
+                backgroundColor: '#111827', // Dark surface
+                borderTopColor: '#1e293b'
+            },
             tabBarLabelStyle: { fontSize: 10 },
         }}>
             {/* Angular order: Calendario, Servicios, Empleados, Sucursales, Clientes, Estadísticas, Mi Perfil */}
@@ -100,15 +95,12 @@ export default function TabLayout() {
                     tabBarIcon: ({ color }) => <MaterialIcons name="badge" size={24} color={color} />,
                 }}
             />
-            {showSucursales && (
-                <Tabs.Screen
-                    name="sucursales"
-                    options={{
-                        title: 'Sucursales',
-                        tabBarIcon: ({ color }) => <MaterialIcons name="store" size={24} color={color} />,
-                    }}
-                />
-            )}
+            <Tabs.Screen
+                name="sucursales"
+                options={{
+                    href: null, // Hidden - no longer needed as separate tab
+                }}
+            />
             <Tabs.Screen
                 name="clientes"
                 options={{
@@ -119,15 +111,15 @@ export default function TabLayout() {
             <Tabs.Screen
                 name="estadisticas"
                 options={{
-                    title: 'Stats',
+                    title: 'Estadísticas',
                     tabBarIcon: ({ color }) => <MaterialIcons name="bar-chart" size={24} color={color} />,
                 }}
             />
             <Tabs.Screen
                 name="perfil"
                 options={{
-                    title: 'Mi Perfil',
-                    tabBarIcon: ({ color }) => <MaterialIcons name="person" size={24} color={color} />,
+                    title: 'Sucursal',
+                    tabBarIcon: ({ color }) => <MaterialIcons name="store" size={24} color={color} />,
                 }}
             />
             {/* Hidden screens that exist but shouldn't show in tab bar */}

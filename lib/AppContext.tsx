@@ -22,6 +22,10 @@ interface AppContextType {
     isAuthenticated: boolean;
     profileMissing: boolean;
 
+    // Theme state
+    themeMode: 'light' | 'dark';
+    toggleTheme: () => Promise<void>;
+
     // Actions
     refreshProfile: () => Promise<void>;
     clearSession: () => Promise<void>;
@@ -74,6 +78,7 @@ const STORAGE_KEYS = {
     SUCURSAL_ID: 'kyros_sucursal_id',
     ROL: 'kyros_user_rol',
     USER_ID: 'kyros_user_id',
+    THEME_MODE: 'kyros_theme_mode',
 };
 
 export function AppProvider({ children }: { children: ReactNode }) {
@@ -84,6 +89,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const [isLoading, setIsLoading] = useState(true);
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [profileMissing, setProfileMissing] = useState(false);
+    const [themeMode, setThemeMode] = useState<'light' | 'dark'>('light');
+
+    // Use a ref to track current userId so the onAuthStateChange callback
+    // always has the latest value (avoids stale closure bug)
+    const userIdRef = React.useRef<string | null>(null);
+
+    // Keep ref in sync with state
+    useEffect(() => {
+        userIdRef.current = userId;
+    }, [userId]);
+
+    const toggleTheme = useCallback(async () => {
+        const newMode = themeMode === 'light' ? 'dark' : 'light';
+        setThemeMode(newMode);
+        await storage.set(STORAGE_KEYS.THEME_MODE, newMode);
+    }, [themeMode]);
 
     // Load profile from Supabase
     // Table: usuarios_perfiles
@@ -178,15 +199,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Initialize on mount
     useEffect(() => {
         const initialize = async () => {
-            // Prevent double loading if already loading
-            // setIsLoading(true); // Already true by default
-
             try {
                 // 1. Load from local storage (fastest)
                 const storedUserId = await storage.get(STORAGE_KEYS.USER_ID);
                 const storedNegocioId = await storage.get(STORAGE_KEYS.NEGOCIO_ID);
                 const storedSucursalId = await storage.get(STORAGE_KEYS.SUCURSAL_ID);
                 const storedRol = await storage.get(STORAGE_KEYS.ROL);
+                const storedTheme = await storage.get(STORAGE_KEYS.THEME_MODE);
+
+                if (storedTheme === 'dark' || storedTheme === 'light') {
+                    setThemeMode(storedTheme);
+                }
 
                 if (storedUserId) {
                     console.log('[AppContext] Loaded from storage:', storedUserId);
@@ -194,24 +217,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
                     setNegocioId(storedNegocioId || null);
                     setSucursalId(storedSucursalId ? parseInt(storedSucursalId) : null);
                     setRol(storedRol || null);
-                    // If we have data, we can potentially show app content while verifying session
                 }
 
-                // 2. Check session (getSession is fast if persisted with AsyncStorage)
+                // 2. Check session
                 const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
                 if (session?.user) {
                     console.log('[AppContext] Active session found');
                     setIsAuthenticated(true);
 
-                    // 3. Refresh profile in background or foreground depending on if we have storage data
-                    // We don't await this if we already have stored data, to make startup faster
                     const loadPromise = loadProfile(session.user.id);
 
                     if (!storedUserId) {
-                        await loadPromise; // Must wait if no local data
+                        await loadPromise;
                     } else {
-                        // Background refresh
                         loadPromise.catch(err => console.error('[AppContext] Background profile refresh failed:', err));
                     }
                 } else {
@@ -221,8 +240,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 }
             } catch (err) {
                 console.error('[AppContext] Initialization error:', err);
-                // Fallback: if storage had data, we might still be "authenticated" offline? 
-                // For now, if init fails, we assume logged out to be safe, or keep local state.
             } finally {
                 setIsLoading(false);
             }
@@ -234,9 +251,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
             console.log('[AppContext] Auth state changed:', event);
 
+            // Ignore events that should NOT trigger loading states
+            // TOKEN_REFRESHED: just a token refresh, user is still logged in
+            // INITIAL_SESSION: fires on page focus/tab switch, user is already loaded
+            if (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
+                console.log('[AppContext] Ignoring event:', event);
+                // Just ensure authenticated state is correct
+                if (session?.user) {
+                    setIsAuthenticated(true);
+                }
+                return;
+            }
+
             if (event === 'SIGNED_IN' && session?.user) {
                 setIsAuthenticated(true);
-                await loadProfile(session.user.id);
+                // Only reload profile if it's a DIFFERENT user than currently loaded
+                // Use ref to avoid stale closure
+                if (session.user.id !== userIdRef.current) {
+                    setIsLoading(true);
+                    await loadProfile(session.user.id);
+                    setIsLoading(false);
+                }
             } else if (event === 'SIGNED_OUT') {
                 await clearSession();
             }
@@ -255,6 +290,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         isLoading,
         isAuthenticated,
         profileMissing,
+        themeMode,
+        toggleTheme,
         refreshProfile,
         clearSession,
     };

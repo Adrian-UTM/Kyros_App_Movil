@@ -1,28 +1,33 @@
 import React from 'react';
-import { StyleSheet, ViewStyle } from 'react-native';
+import { StyleSheet, ViewStyle, StyleProp } from 'react-native';
 import { Card, Text, useTheme } from 'react-native-paper';
+import { useApp } from '../lib/AppContext';
 
 interface KyrosCardProps {
     title?: string;
     children: React.ReactNode;
     onPress?: () => void;
-    style?: ViewStyle;
+    style?: StyleProp<ViewStyle>;
 }
 
 export default function KyrosCard({ title, children, onPress, style }: KyrosCardProps) {
     const theme = useTheme();
+    const { themeMode } = useApp();
 
     return (
         <Card
             style={[
                 styles.card,
-                { borderColor: theme.colors.outline },
+                {
+                    backgroundColor: theme.colors.surface,
+                    borderColor: themeMode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : theme.colors.outline,
+                },
                 style
             ]}
             onPress={onPress}
             mode="outlined"
         >
-            <Card.Content>
+            <Card.Content style={styles.content}>
                 {title && (
                     <Text variant="titleLarge" style={[styles.title, { color: theme.colors.onSurface }]}>
                         {title}
@@ -36,13 +41,20 @@ export default function KyrosCard({ title, children, onPress, style }: KyrosCard
 
 const styles = StyleSheet.create({
     card: {
-        backgroundColor: 'white',
         borderWidth: 1,
         marginBottom: 16,
-        borderRadius: 8, // Rounded corners as per Material 3 but slightly less for "sharp" feel if needed, keeping 8 for now.
+        borderRadius: 20, // Modern softer, larger radius
+        overflow: 'hidden',
+    },
+    content: {
+        padding: 24,
     },
     title: {
-        marginBottom: 8,
-        fontWeight: '600',
+        marginBottom: 16,
+        fontWeight: '700',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+        fontSize: 15,
+        color: '#e2e8f0',
     },
 });

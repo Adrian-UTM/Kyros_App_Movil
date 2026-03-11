@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, Platform } from 'react-native';
 import { Text, useTheme, ActivityIndicator } from 'react-native-paper';
 import { Calendar } from 'react-native-calendars';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -11,7 +11,18 @@ import KyrosButton from '../../components/KyrosButton';
 import { supabase } from '../../lib/supabaseClient';
 import { useApp } from '../../lib/AppContext';
 import { getLocalToday, formatDateTitle, getStartOfDayLocal, getEndOfDayLocal } from '../../lib/date';
-import CitaActionsModal from '../../components/CitaActionsModal';
+import { LocaleConfig } from 'react-native-calendars';
+import NetInfo from '@react-native-community/netinfo';
+
+// Configurar calendario en español
+LocaleConfig.locales['es'] = {
+    monthNames: ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'],
+    monthNamesShort: ['Ene.', 'Feb.', 'Mar.', 'Abr.', 'May.', 'Jun.', 'Jul.', 'Ago.', 'Sep.', 'Oct.', 'Nov.', 'Dic.'],
+    dayNames: ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'],
+    dayNamesShort: ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'],
+    today: 'Hoy'
+};
+LocaleConfig.defaultLocale = 'es';
 
 // ============================================================
 // CONFIGURACIÓN DE TABLAS - Cambiar nombres aquí si es necesario
@@ -69,21 +80,32 @@ export default function AgendaScreen() {
 
     // Estado local
     const [selectedDate, setSelectedDate] = useState(getLocalToday());
+    const [currentMonth, setCurrentMonth] = useState(getLocalToday().substring(0, 7));
+    const [monthMarks, setMonthMarks] = useState<{ [key: string]: any }>({});
     const [citas, setCitas] = useState<Cita[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(false); // Default to false to prevent infinite loop on empty context
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [isOffline, setIsOffline] = useState(false);
 
-    // Modal Acciones
-    const [selectedCita, setSelectedCita] = useState<Cita | null>(null);
-    const [accionesVisible, setAccionesVisible] = useState(false);
+    const [sucursalNombre, setSucursalNombre] = useState('Mi Sucursal');
 
     // Estadísticas Locales & UI State
     const [calendarVisible, setCalendarVisible] = useState(true);
+    const [calendarFilter, setCalendarFilter] = useState<'todas' | 'completadas' | 'proximas'>('todas');
 
     // Filtro de Sucursal (Solo para Dueños/Admin)
     const [selectedSucursal, setSelectedSucursal] = useState<number | 'all'>('all');
     const [sucursalesDisponibles, setSucursalesDisponibles] = useState<{ id: number; nombre: string }[]>([]);
+
+    // Obtener total de precio de servicios
+    const getTotalPrecio = (cita: Cita): number => {
+        if (!cita.citas_servicios || cita.citas_servicios.length === 0) return 0;
+        return cita.citas_servicios.reduce(
+            (acc, cs) => acc + (cs.precio_actual || cs.servicios?.[0]?.precio_base || 0),
+            0
+        );
+    };
 
     // Calcular Resumen del Día
     const totalCitas = citas.length;
@@ -94,6 +116,10 @@ export default function AgendaScreen() {
     useEffect(() => {
         if (rol === 'sucursal' && sucursalId) {
             setSelectedSucursal(sucursalId);
+            // Fetch branch name
+            supabase.from('sucursales').select('nombre').eq('id', sucursalId).single().then(({ data }) => {
+                if (data) setSucursalNombre(data.nombre);
+            });
         }
     }, [rol, sucursalId]);
 
@@ -116,16 +142,28 @@ export default function AgendaScreen() {
     const fetchCitas = useCallback(async () => {
         if (!negocioId) {
             console.log('[Agenda] Fetch skipped: No negocioId');
+            setLoading(false);
             return;
         }
 
-        // Si el rol es sucursal y aún no tenemos ID, esperar
-        if (rol === 'sucursal' && !sucursalId) return;
+        if (rol === 'sucursal' && !sucursalId) {
+            setLoading(false);
+            return;
+        }
 
         setLoading(true);
         setError(null);
 
         try {
+            const networkState = await NetInfo.fetch();
+            if (!networkState.isConnected) {
+                setIsOffline(true);
+                setLoading(false);
+                setRefreshing(false);
+                return;
+            } else {
+                setIsOffline(false);
+            }
             const startOfDay = getStartOfDayLocal(selectedDate);
             const endOfDay = getEndOfDayLocal(selectedDate);
 
@@ -168,11 +206,96 @@ export default function AgendaScreen() {
             setRefreshing(false);
         }
     }, [selectedDate, negocioId, sucursalId, rol, selectedSucursal]);
+    const fetchMonthMarks = useCallback(async (yearMonth: string) => {
+        if (!negocioId) return;
 
-    const onRefresh = useCallback(() => {
+        const [year, month] = yearMonth.split('-');
+        const startDate = `${yearMonth}-01T00:00:00.000`;
+        const nextMonth = parseInt(month, 10) === 12 ? '01' : String(parseInt(month, 10) + 1).padStart(2, '0');
+        const nextYear = parseInt(month, 10) === 12 ? String(parseInt(year, 10) + 1) : year;
+        const endDate = `${nextYear}-${nextMonth}-01T00:00:00.000`;
+
+        let query = supabase
+            .from(TABLES.citas)
+            .select('fecha_hora_inicio, estado')
+            .eq('negocio_id', negocioId)
+            .gte('fecha_hora_inicio', startDate)
+            .lt('fecha_hora_inicio', endDate)
+            .neq('estado', 'cancelada');
+
+        if (rol === 'sucursal' && sucursalId) {
+            query = query.eq('sucursal_id', sucursalId);
+        } else if (rol === 'dueño' && selectedSucursal !== 'all') {
+            query = query.eq('sucursal_id', selectedSucursal);
+        }
+
+        const { data, error } = await query;
+
+        if (error) {
+            console.error('[Agenda] Error fetching month marks:', error.message);
+            return;
+        }
+
+        if (data) {
+            const completedDays = new Set<string>();
+            const upcomingDays = new Set<string>();
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            data.forEach(cita => {
+                if (cita.fecha_hora_inicio) {
+                    const dateObj = new Date(cita.fecha_hora_inicio);
+                    const localIso = new Date(dateObj.getTime() - dateObj.getTimezoneOffset() * 60000).toISOString();
+                    const dateStr = localIso.split('T')[0];
+                    const dayDate = new Date(dateStr + 'T00:00:00');
+
+                    if (cita.estado === 'completada') {
+                        completedDays.add(dateStr);
+                    } else {
+                        upcomingDays.add(dateStr);
+                    }
+                }
+            });
+
+            const marks: any = {};
+            // Apply marks based on filter
+            if (calendarFilter === 'todas' || calendarFilter === 'proximas') {
+                upcomingDays.forEach(d => {
+                    marks[d] = { customStyles: { container: {}, text: { color: '#10b981', fontWeight: 'bold' } } };
+                });
+            }
+            if (calendarFilter === 'todas' || calendarFilter === 'completadas') {
+                completedDays.forEach(d => {
+                    if (!marks[d]) {
+                        marks[d] = { customStyles: { container: {}, text: { color: '#10b981', fontWeight: 'bold' } } };
+                    }
+                });
+            }
+            setMonthMarks(marks);
+        }
+    }, [negocioId, sucursalId, rol, selectedSucursal, calendarFilter]);
+
+    // Initial load when current context is established
+    useEffect(() => {
+        if (!appLoading) {
+            if (negocioId) {
+                fetchCitas();
+                fetchMonthMarks(currentMonth);
+            } else {
+                // Si terminó de cargar la app y no hay negocioId, detener loading y mostrar error
+                console.warn('[Agenda] No negocioId found after app load');
+                setLoading(false);
+                setError('No se encontró información del negocio asociadas a tu cuenta.');
+            }
+        }
+    }, [appLoading, negocioId, sucursalId, selectedSucursal, fetchCitas, fetchMonthMarks, currentMonth]);
+
+    const onRefresh = useCallback(async () => {
         setRefreshing(true);
-        fetchCitas();
-    }, [fetchCitas]);
+        await fetchMonthMarks(currentMonth);
+        await fetchCitas();
+        setRefreshing(false);
+    }, [fetchCitas, fetchMonthMarks, currentMonth]);
 
     // Cargar citas cuando cambia la fecha o el contexto está listo
     useEffect(() => {
@@ -226,14 +349,20 @@ export default function AgendaScreen() {
 
     // Obtener nombre del cliente (SOLO si existe en BD, retorna null si no hay datos)
     const getClienteNombre = (cita: Cita): string | null => {
-        if (cita.clientes_bot && cita.clientes_bot[0]?.nombre) return cita.clientes_bot[0].nombre;
+        if (cita.clientes_bot) {
+            const cliente = Array.isArray(cita.clientes_bot) ? cita.clientes_bot[0] : cita.clientes_bot;
+            if (cliente?.nombre) return cliente.nombre;
+        }
         if (cita.nombre_cliente_manual) return cita.nombre_cliente_manual;
         return null;
     };
 
-    // Obtener nombre del empleado (es array)
+    // Obtener nombre del empleado
     const getEmpleadoNombre = (cita: Cita): string | null => {
-        if (cita.empleados && cita.empleados[0]?.nombre) return cita.empleados[0].nombre;
+        if (cita.empleados) {
+            const empleado = Array.isArray(cita.empleados) ? cita.empleados[0] : cita.empleados;
+            if (empleado?.nombre) return empleado.nombre;
+        }
         return null;
     };
 
@@ -246,60 +375,40 @@ export default function AgendaScreen() {
         return nombres.length > 0 ? nombres.join(', ') : null;
     };
 
-    // Obtener total de precio de servicios
-    const getTotalPrecio = (cita: Cita): number => {
-        if (!cita.citas_servicios || cita.citas_servicios.length === 0) return 0;
-        return cita.citas_servicios.reduce(
-            (acc, cs) => acc + (cs.precio_actual || cs.servicios?.[0]?.precio_base || 0),
-            0
-        );
-    };
+
 
     // Obtener colores por estado
     const getStatusColors = (status: string) => {
         return STATUS_COLORS[status] || STATUS_COLORS.confirmada;
     };
 
+    const handleStatusChange = async (citaId: number, newState: string) => {
+        try {
+            setLoading(true);
+            const { error } = await supabase
+                .from(TABLES.citas)
+                .update({ estado: newState })
+                .eq('id', citaId);
+
+            if (error) throw error;
+            fetchCitas();
+        } catch (err: any) {
+            console.error('Error changing status:', err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const getBranchDisplayName = () => {
+        if (rol === 'dueño') {
+            if (selectedSucursal === 'all') return 'Todas las sucursales';
+            return sucursalesDisponibles.find(s => s.id === selectedSucursal)?.nombre || 'Mi Sucursal';
+        }
+        return sucursalNombre;
+    };
+
     return (
         <KyrosScreen title="Panel de Control">
-            <View style={styles.headerContainer}>
-                <Text variant="headlineSmall" style={styles.headerTitle}>
-                    Agenda {formatDateTitle(selectedDate)}
-                </Text>
-
-                <TouchableOpacity onPress={() => setCalendarVisible(!calendarVisible)} style={styles.calendarToggleBtn}>
-                    <MaterialIcons name={calendarVisible ? "event-busy" : "event"} size={26} color={theme.colors.primary} />
-                </TouchableOpacity>
-
-                <KyrosButton
-                    onPress={() => router.push(`/citas/nueva?fecha=${selectedDate}`)}
-                    style={styles.newButton}
-                    icon="plus"
-                    mode="contained"
-                    compact
-                >
-                    Nueva
-                </KyrosButton>
-            </View>
-
-            {/* Filtro de Sucursal (Visible solo para Dueño) */}
-            {rol === 'dueño' && (
-                <View style={styles.filterContainer}>
-                    <MaterialIcons name="store" size={20} color="#555" style={{ marginRight: 8 }} />
-                    <View style={styles.pickerWrapper}>
-                        <Picker
-                            selectedValue={selectedSucursal}
-                            onValueChange={(itemValue) => setSelectedSucursal(itemValue)}
-                            style={styles.picker}
-                        >
-                            <Picker.Item label="Todas las sucursales" value="all" />
-                            {sucursalesDisponibles.map(s => (
-                                <Picker.Item key={s.id} label={s.nombre} value={s.id} />
-                            ))}
-                        </Picker>
-                    </View>
-                </View>
-            )}
 
             <ScrollView
                 style={styles.scrollContainer}
@@ -310,40 +419,141 @@ export default function AgendaScreen() {
             >
                 <View style={styles.mainLayout}>
 
+                    {/* Encabezado y Filtros Movidos dentro del Scroll para maximizar espacio */}
+                    <View style={{ gap: 12, marginBottom: 8 }}>
+                        <View style={[styles.headerContainer, { backgroundColor: '#111827', borderRadius: 16 }]}>
+                            <Text variant="headlineSmall" style={styles.headerTitle}>
+                                Agenda {formatDateTitle(selectedDate)}
+                            </Text>
+
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                <TouchableOpacity onPress={() => setCalendarVisible(!calendarVisible)} style={styles.calendarToggleBtn}>
+                                    <MaterialIcons name={calendarVisible ? "event-busy" : "event"} size={26} color="#3b82f6" />
+                                </TouchableOpacity>
+
+                                <KyrosButton
+                                    onPress={() => router.push(`/citas/nueva?fecha=${selectedDate}`)}
+                                    style={styles.newButton}
+                                    icon="plus"
+                                    mode="contained"
+                                    compact
+                                >
+                                    Nueva
+                                </KyrosButton>
+                            </View>
+                        </View>
+
+                        {/* Filtro de Sucursal (Visible solo para Dueño) */}
+                        {rol === 'dueño' && (
+                            <View style={[styles.filterContainer, { backgroundColor: '#111827', borderRadius: 16 }]}>
+                                <MaterialIcons name="store" size={20} color="#94a3b8" style={{ marginRight: 8 }} />
+                                <View style={styles.pickerWrapper}>
+                                    <Picker
+                                        selectedValue={selectedSucursal}
+                                        onValueChange={(itemValue) => setSelectedSucursal(itemValue)}
+                                        style={styles.picker}
+                                    >
+                                        <Picker.Item label="Todas las sucursales" value="all" />
+                                        {sucursalesDisponibles.map(s => (
+                                            <Picker.Item key={s.id} label={s.nombre} value={s.id} />
+                                        ))}
+                                    </Picker>
+                                </View>
+                            </View>
+                        )}
+                    </View>
+
                     {/* Dashboard Stats Panel */}
                     <View style={styles.statsRow}>
-                        <View style={styles.statCard}>
-                            <Text variant="labelMedium" style={{ color: '#666' }}>Citas</Text>
-                            <Text variant="headlineSmall" style={{ fontWeight: 'bold', color: theme.colors.primary }}>{totalCitas}</Text>
+                        <View style={[styles.statCard]}>
+                            <Text variant="labelMedium" style={{ color: '#94a3b8' }}>Citas</Text>
+                            <Text variant="headlineSmall" style={{ fontWeight: 'bold', color: '#1E66FF' }}>{totalCitas}</Text>
                         </View>
-                        <View style={styles.statCard}>
-                            <Text variant="labelMedium" style={{ color: '#666' }}>Por Atender</Text>
+                        <View style={[styles.statCard]}>
+                            <Text variant="labelMedium" style={{ color: '#94a3b8' }}>Por Atender</Text>
                             <Text variant="headlineSmall" style={{ fontWeight: 'bold', color: '#f57c00' }}>{citasPendientes}</Text>
                         </View>
-                        <View style={styles.statCard}>
-                            <Text variant="labelMedium" style={{ color: '#666' }}>Estimado</Text>
-                            <Text variant="headlineSmall" style={{ fontWeight: 'bold', color: '#388e3c' }}>${ingresoEstimado}</Text>
+                        <View style={[styles.statCard]}>
+                            <Text variant="labelMedium" style={{ color: '#94a3b8' }}>Estimado</Text>
+                            <Text variant="headlineSmall" style={{ fontWeight: 'bold', color: '#10b981' }}>${ingresoEstimado}</Text>
                         </View>
                     </View>
 
                     {/* Calendar Card (Collapsible) */}
                     {calendarVisible && (
-                        <View style={styles.calendarCard}>
+                        <View style={styles.calendarWrapper}>
+                            <Text style={{ textAlign: 'center', fontWeight: 'bold', fontSize: 16, marginBottom: 12, color: '#f8fafc' }}>
+                                {getBranchDisplayName()}
+                            </Text>
                             <Calendar
+                                markingType={'custom'}
                                 onDayPress={(day: { dateString: string }) => setSelectedDate(day.dateString)}
+                                onMonthChange={(month: { year: number, month: number }) => {
+                                    setCurrentMonth(`${month.year}-${String(month.month).padStart(2, '0')}`);
+                                }}
                                 markedDates={{
-                                    [selectedDate]: { selected: true, disableTouchEvent: true }
+                                    ...monthMarks,
+                                    [selectedDate]: {
+                                        customStyles: {
+                                            container: { backgroundColor: theme.colors.primary, borderRadius: 16 },
+                                            text: { color: 'white', fontWeight: 'bold' }
+                                        }
+                                    }
                                 }}
                                 theme={{
-                                    selectedDayBackgroundColor: theme.colors.primary,
-                                    todayTextColor: theme.colors.primary,
-                                    arrowColor: theme.colors.primary,
+                                    calendarBackground: 'transparent',
+                                    backgroundColor: 'transparent',
+                                    selectedDayBackgroundColor: '#3b82f6',
+                                    selectedDayTextColor: '#ffffff',
+                                    todayTextColor: '#3b82f6',
+                                    dayTextColor: '#e2e8f0',
+                                    textDisabledColor: '#475569',
+                                    dotColor: '#10b981',
+                                    selectedDotColor: '#ffffff',
+                                    arrowColor: '#94a3b8',
+                                    monthTextColor: '#f8fafc',
+                                    indicatorColor: '#3b82f6',
+                                    textDayFontFamily: 'System',
+                                    textMonthFontFamily: 'System',
+                                    textDayHeaderFontFamily: 'System',
+                                    textDayFontWeight: '500',
                                     textMonthFontWeight: 'bold',
-                                    textDayHeaderFontWeight: 'bold',
+                                    textDayHeaderFontWeight: '600',
+                                    textDayFontSize: 15,
+                                    textMonthFontSize: 16,
+                                    textDayHeaderFontSize: 13
                                 }}
                             />
+
+                            {/* Filter Toggle */}
+                            <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+                                {(['todas', 'proximas', 'completadas'] as const).map(f => (
+                                    <TouchableOpacity
+                                        key={f}
+                                        onPress={() => { setCalendarFilter(f); fetchMonthMarks(currentMonth); }}
+                                        style={{
+                                            flex: 1,
+                                            paddingVertical: 8,
+                                            borderRadius: 10,
+                                            backgroundColor: calendarFilter === f ? 'rgba(56, 189, 248, 0.15)' : '#0f172a',
+                                            borderWidth: 1,
+                                            borderColor: calendarFilter === f ? '#38bdf8' : '#334155',
+                                            alignItems: 'center',
+                                        }}
+                                    >
+                                        <Text style={{
+                                            color: calendarFilter === f ? '#38bdf8' : '#94a3b8',
+                                            fontSize: 12,
+                                            fontWeight: calendarFilter === f ? '700' : '500',
+                                        }}>
+                                            {f === 'todas' ? 'Todas' : f === 'proximas' ? 'Próximas' : 'Completadas'}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
                         </View>
                     )}
+
 
                     {/* Content Area */}
                     <View style={styles.listContainer}>
@@ -358,7 +568,20 @@ export default function AgendaScreen() {
                         )}
 
                         {/* Error State */}
-                        {!loading && error && error.toLowerCase().includes('negocio') ? (
+                        {!loading && isOffline ? (
+                            <View style={styles.centerState}>
+                                <MaterialIcons name="wifi-off" size={64} color="#888" />
+                                <Text variant="bodyLarge" style={[styles.stateText, { color: '#888', paddingHorizontal: 20 }]}>
+                                    Sin conexión a Internet
+                                </Text>
+                                <Text style={[styles.stateText, { marginTop: 0, paddingHorizontal: 20, fontSize: 13 }]}>
+                                    Verifica tu conexión y vuelve a intentarlo.
+                                </Text>
+                                <KyrosButton onPress={() => fetchCitas()} style={{ marginTop: 16 }}>
+                                    Reintentar
+                                </KyrosButton>
+                            </View>
+                        ) : !loading && error && error.toLowerCase().includes('negocio') ? (
                             <View style={styles.centerState}>
                                 <MaterialIcons name="storefront" size={64} color="#888" />
                                 <Text style={[styles.stateText, { color: '#555', fontSize: 16, marginBottom: 8 }]}>
@@ -368,7 +591,7 @@ export default function AgendaScreen() {
                                     Agrega una sucursal en el panel de Sucursales para comenzar a agendar citas.
                                 </Text>
                             </View>
-                        ) : !loading && error && (
+                        ) : !loading && error && !isOffline ? (
                             <View style={styles.centerState}>
                                 <MaterialIcons name="error-outline" size={64} color="#d32f2f" />
                                 <Text variant="bodyLarge" style={[styles.stateText, { color: '#d32f2f', paddingHorizontal: 20 }]}>
@@ -378,10 +601,10 @@ export default function AgendaScreen() {
                                     Reintentar
                                 </KyrosButton>
                             </View>
-                        )}
+                        ) : null}
 
                         {/* Empty State */}
-                        {!loading && !error && citas.length === 0 && (
+                        {!loading && !error && !isOffline && citas.length === 0 && (
                             <View style={styles.emptyState}>
                                 <MaterialIcons name="event-busy" size={64} color="#ccc" />
                                 <Text variant="bodyLarge" style={styles.emptyText}>
@@ -390,205 +613,288 @@ export default function AgendaScreen() {
                             </View>
                         )}
 
-                        {/* Appointments List (SOLO LECTURA) */}
-                        {!loading && !error && citas.map((cita) => {
+                        {/* Appointments List */}
+                        {!loading && !error && !isOffline && citas.map((cita) => {
                             const statusColors = getStatusColors(cita.estado);
                             return (
-                                <KyrosCard
+                                <View
                                     key={cita.id}
-                                    style={{
-                                        ...styles.card,
-                                        borderLeftWidth: 5,
-                                        borderLeftColor: statusColors.border
-                                    }}
-                                    onPress={() => {
-                                        setSelectedCita(cita);
-                                        setAccionesVisible(true);
-                                    }}
+                                    style={styles.card}
                                 >
-                                    <View style={styles.cardContent}>
-                                        {/* Time Column */}
-                                        <View style={styles.timeColumn}>
-                                            <Text variant="bodyMedium" style={styles.startTime}>
-                                                {formatTime(cita.fecha_hora_inicio)}
-                                            </Text>
-                                            <Text variant="bodySmall" style={styles.endTime}>
-                                                {formatTime(cita.fecha_hora_fin)}
-                                            </Text>
-                                        </View>
+                                    {/* Status accent bar */}
+                                    <View style={[styles.cardAccent, { backgroundColor: statusColors.border }]} />
 
-                                        {/* Info Column */}
-                                        <View style={styles.infoColumn}>
-                                            {/* Cliente - solo si existe */}
-                                            {getClienteNombre(cita) ? (
-                                                <Text variant="titleMedium" style={styles.clientName}>
-                                                    {getClienteNombre(cita)}
+                                    <View style={styles.cardBody}>
+                                        {/* Top row: Time + Client + Status */}
+                                        <View style={styles.cardTopRow}>
+                                            <View style={styles.timeChip}>
+                                                <MaterialIcons name="schedule" size={14} color="#38bdf8" />
+                                                <Text style={styles.timeChipText}>
+                                                    {formatTime(cita.fecha_hora_inicio)} — {formatTime(cita.fecha_hora_fin)}
                                                 </Text>
-                                            ) : (
-                                                <Text variant="titleMedium" style={[styles.clientName, { color: '#999', fontStyle: 'italic' }]}>
-                                                    (Sin cliente registrado)
-                                                </Text>
-                                            )}
-
-                                            {/* Servicios - solo si existen */}
-                                            {getServiciosNombres(cita) ? (
-                                                <Text variant="bodyMedium" style={styles.serviceText}>
-                                                    {getServiciosNombres(cita)}
-                                                </Text>
-                                            ) : null}
-
-                                            {/* Precio total */}
-                                            {(() => {
-                                                const total = cita.monto_total || getTotalPrecio(cita);
-                                                return total > 0 ? (
-                                                    <Text variant="bodyMedium" style={[styles.priceText, { color: theme.colors.primary }]}>
-                                                        Total: ${total}
-                                                    </Text>
-                                                ) : null;
-                                            })()}
-
-                                            {/* Empleado - solo si existe */}
-                                            {getEmpleadoNombre(cita) && (
-                                                <View style={styles.employeeContainer}>
-                                                    <MaterialIcons name="person" size={16} color="#888" />
-                                                    <Text variant="bodySmall" style={styles.employeeText}>
-                                                        {getEmpleadoNombre(cita)}
-                                                    </Text>
-                                                </View>
-                                            )}
-                                        </View>
-
-                                        {/* Status Column */}
-                                        <View style={styles.statusColumn}>
-                                            {/* Status Badge */}
+                                            </View>
                                             <View style={[styles.statusBadge, { backgroundColor: statusColors.bg }]}>
                                                 <Text style={[styles.statusText, { color: statusColors.text }]}>
-                                                    {cita.estado.toUpperCase()}
+                                                    {cita.estado.toUpperCase().replace('_', ' ')}
                                                 </Text>
                                             </View>
                                         </View>
+
+                                        {/* Client name */}
+                                        <Text style={styles.clientName}>
+                                            {getClienteNombre(cita) || '(Sin cliente registrado)'}
+                                        </Text>
+
+                                        {/* Services */}
+                                        {getServiciosNombres(cita) ? (
+                                            <Text style={styles.serviceText}>{getServiciosNombres(cita)}</Text>
+                                        ) : null}
+
+                                        {/* Bottom row: Employee + Price + Actions */}
+                                        <View style={styles.cardBottomRow}>
+                                            <View style={styles.cardMeta}>
+                                                {getEmpleadoNombre(cita) && (
+                                                    <View style={styles.metaItem}>
+                                                        <MaterialIcons name="person" size={15} color="#64748b" />
+                                                        <Text style={styles.metaText}>{getEmpleadoNombre(cita)}</Text>
+                                                    </View>
+                                                )}
+                                                {(() => {
+                                                    const total = cita.monto_total || getTotalPrecio(cita);
+                                                    return total > 0 ? (
+                                                        <View style={styles.metaItem}>
+                                                            <MaterialIcons name="attach-money" size={15} color="#22c55e" />
+                                                            <Text style={[styles.metaText, { color: '#22c55e', fontWeight: '700' }]}>${total}</Text>
+                                                        </View>
+                                                    ) : null;
+                                                })()}
+                                            </View>
+
+                                            {/* Actions */}
+                                            <View style={styles.cardActions}>
+                                                {cita.estado !== 'completada' && cita.estado !== 'cancelada' && (
+                                                    <TouchableOpacity onPress={() => router.push(`/citas/${cita.id}`)} style={styles.actionBtn}>
+                                                        <MaterialIcons name="edit" size={18} color="#94a3b8" />
+                                                    </TouchableOpacity>
+                                                )}
+
+                                                {cita.estado === 'pendiente_pago' && (
+                                                    <TouchableOpacity onPress={() => handleStatusChange(cita.id, 'completada')} style={[styles.actionBtn, styles.actionPay]}>
+                                                        <MaterialIcons name="payments" size={18} color="#22c55e" />
+                                                    </TouchableOpacity>
+                                                )}
+
+                                                {cita.estado !== 'completada' && cita.estado !== 'pendiente_pago' && cita.estado !== 'cancelada' && (
+                                                    <TouchableOpacity onPress={() => handleStatusChange(cita.id, 'completada')} style={[styles.actionBtn, styles.actionComplete]}>
+                                                        <MaterialIcons name="check" size={18} color="#38bdf8" />
+                                                    </TouchableOpacity>
+                                                )}
+
+                                                {cita.estado !== 'cancelada' && cita.estado !== 'completada' && (
+                                                    <TouchableOpacity onPress={() => handleStatusChange(cita.id, 'cancelada')} style={[styles.actionBtn, styles.actionCancel]}>
+                                                        <MaterialIcons name="close" size={18} color="#ef4444" />
+                                                    </TouchableOpacity>
+                                                )}
+                                            </View>
+                                        </View>
                                     </View>
-                                </KyrosCard>
+                                </View>
                             );
                         })}
                         <View style={{ height: 80 }} />
                     </View>
                 </View>
             </ScrollView>
-
-            <CitaActionsModal
-                visible={accionesVisible}
-                cita={selectedCita}
-                negocioId={negocioId}
-                onDismiss={() => {
-                    setAccionesVisible(false);
-                    setSelectedCita(null);
-                }}
-                onCitaUpdated={() => {
-                    fetchCitas(); // Refetch al actualizar
-                }}
-            />
-        </KyrosScreen>
+        </KyrosScreen >
     );
 }
 
 const styles = StyleSheet.create({
-    scrollContainer: {
-        flex: 1,
-    },
     headerContainer: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
         paddingHorizontal: 16,
         paddingVertical: 12,
-        backgroundColor: '#fff',
-        borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        backgroundColor: '#0a0f1e',
+        borderBottomWidth: 2,
+        borderBottomColor: '#475569'
     },
     headerTitle: {
         fontWeight: 'bold',
-        textTransform: 'capitalize',
-        flex: 1,
-        marginRight: 8,
+        fontSize: 18,
+        color: '#f8fafc'
     },
     calendarToggleBtn: {
         padding: 8,
-        marginRight: 8,
+        borderRadius: 20,
+        backgroundColor: '#111827',
+        borderWidth: 2,
+        borderColor: '#475569'
     },
     newButton: {
         borderRadius: 20,
     },
-    // Stats Panel
-    statsRow: {
-        flexDirection: 'row',
-        paddingHorizontal: 16,
-        paddingTop: 12,
-        gap: 8,
-        // fallback for gap if needed in older RN:
-        // justifyContent: 'space-between', 
-    },
-    statCard: {
-        flex: 1,
-        backgroundColor: 'white',
-        borderRadius: 8,
-        padding: 8,
-        alignItems: 'center',
-        elevation: 2,
-        borderWidth: 1,
-        borderColor: '#eee',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.1,
-        shadowRadius: 2,
-    },
-    calendarCard: {
-        margin: 16,
-        borderRadius: 8,
-        overflow: 'hidden',
-        borderWidth: 1,
-        borderColor: '#e0e0e0',
-        backgroundColor: 'white',
-        elevation: 2,
-    },
-    mainLayout: {
-        flex: 1,
-    },
-    // Filters
     filterContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginHorizontal: 16,
-        marginTop: 8,
-        paddingHorizontal: 12,
-        backgroundColor: '#fff',
-        borderRadius: 8,
-        borderWidth: 1,
-        borderColor: '#ddd',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        backgroundColor: '#0a0f1e',
+        borderBottomWidth: 2,
+        borderBottomColor: '#475569'
     },
     pickerWrapper: {
         flex: 1,
+        backgroundColor: '#111827',
+        borderRadius: 8,
+        borderWidth: 2,
+        borderColor: '#475569',
+        height: 40,
+        justifyContent: 'center',
+        overflow: 'hidden'
     },
     picker: {
-        height: 50,
-        width: '100%',
+        color: '#f8fafc',
     },
-    listContainer: {
+    scrollContainer: {
         flex: 1,
-        paddingHorizontal: 16,
-        marginTop: 10,
+        backgroundColor: '#0a0f1e'
     },
-    // Empty State
-    emptyState: {
+    mainLayout: {
+        padding: 16,
+        gap: 16,
+    },
+    statsRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        gap: 12,
+    },
+    statCard: {
+        flex: 1,
+        padding: 16,
+        borderRadius: 16,
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: 80,
+        backgroundColor: '#111827',
+        borderWidth: 2,
+        borderColor: '#475569'
     },
-    emptyText: {
-        marginTop: 16,
-        color: '#999',
-        textAlign: 'center',
-        fontStyle: 'italic',
+    calendarWrapper: {
+        backgroundColor: '#111827',
+        borderRadius: 24,
+        padding: 16,
+        marginHorizontal: 4,
+        borderWidth: 2,
+        borderColor: '#475569'
+    },
+    listContainer: {
+        gap: 12,
+        marginTop: 8
+    },
+    card: {
+        borderRadius: 16,
+        marginBottom: 10,
+        overflow: 'hidden',
+        backgroundColor: '#111827',
+        borderWidth: 1,
+        borderColor: '#1e293b',
+    },
+    cardAccent: {
+        height: 4,
+        width: '100%',
+    },
+    cardBody: {
+        padding: 16,
+    },
+    cardTopRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 10,
+    },
+    timeChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(56, 189, 248, 0.1)',
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        borderRadius: 20,
+        gap: 6,
+    },
+    timeChipText: {
+        color: '#38bdf8',
+        fontSize: 13,
+        fontWeight: '600',
+    },
+    clientName: {
+        color: '#f1f5f9',
+        fontWeight: '700',
+        fontSize: 16,
+        marginBottom: 4,
+    },
+    serviceText: {
+        color: '#64748b',
+        fontSize: 13,
+        marginBottom: 8,
+    },
+    cardBottomRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginTop: 8,
+        paddingTop: 10,
+        borderTopWidth: 1,
+        borderTopColor: '#1e293b',
+    },
+    cardMeta: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 14,
+        flex: 1,
+    },
+    metaItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    metaText: {
+        color: '#94a3b8',
+        fontSize: 13,
+    },
+    cardActions: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    actionBtn: {
+        padding: 8,
+        borderRadius: 10,
+        backgroundColor: '#1e293b',
+        borderWidth: 1,
+        borderColor: '#334155',
+    },
+    actionPay: {
+        backgroundColor: 'rgba(34, 197, 94, 0.1)',
+        borderColor: '#22c55e',
+    },
+    actionComplete: {
+        backgroundColor: 'rgba(56, 189, 248, 0.1)',
+        borderColor: '#38bdf8',
+    },
+    actionCancel: {
+        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+        borderColor: '#ef4444',
+    },
+    statusBadge: {
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 20,
+    },
+    statusText: {
+        fontSize: 10,
+        fontWeight: '800',
+        letterSpacing: 0.5,
     },
     // Center States (Loading, Error)
     centerState: {
@@ -598,73 +904,19 @@ const styles = StyleSheet.create({
     },
     stateText: {
         marginTop: 16,
-        color: '#888',
+        color: '#94a3b8',
         textAlign: 'center',
     },
-    // Card Styles
-    card: {
-        marginBottom: 10,
-    },
-    cardContent: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-    },
-    // Time Column
-    timeColumn: {
-        width: 70,
-        marginRight: 12,
-        paddingRight: 12,
-        borderRightWidth: 1,
-        borderRightColor: '#eee',
-        justifyContent: 'center',
-        minHeight: 50,
-    },
-    startTime: {
-        fontWeight: 'bold',
-        color: '#555',
-    },
-    endTime: {
-        fontSize: 12,
-        color: '#999',
-        marginTop: 2,
-    },
-    // Info Column
-    infoColumn: {
-        flex: 1,
-    },
-    clientName: {
-        fontWeight: 'bold',
-        marginBottom: 2,
-    },
-    serviceText: {
-        color: '#666',
-        marginBottom: 4,
-    },
-    priceText: {
-        fontWeight: 'bold',
-    },
-    employeeContainer: {
-        flexDirection: 'row',
+    // Empty State
+    emptyState: {
         alignItems: 'center',
-        marginTop: 4,
-    },
-    employeeText: {
-        marginLeft: 4,
-        color: '#888',
-    },
-    // Status Column
-    statusColumn: {
-        alignItems: 'flex-end',
         justifyContent: 'center',
-        marginLeft: 8,
+        paddingVertical: 80,
     },
-    statusBadge: {
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 12,
-    },
-    statusText: {
-        fontSize: 10,
-        fontWeight: 'bold',
-    },
+    emptyText: {
+        marginTop: 16,
+        color: '#64748b',
+        textAlign: 'center',
+        fontStyle: 'italic',
+    }
 });

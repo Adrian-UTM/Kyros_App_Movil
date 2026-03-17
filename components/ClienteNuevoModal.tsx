@@ -5,6 +5,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabaseClient';
 import { useApp } from '../lib/AppContext';
 import { safeAction } from '../lib/safeAction';
+import KyrosSelector from './KyrosSelector';
 
 const PHONE_MIN_LENGTH = 10;
 const PHONE_MAX_LENGTH = 15;
@@ -13,38 +14,44 @@ interface ClienteNuevoModalProps {
     visible: boolean;
     onDismiss: () => void;
     onClienteCreado: (cliente: { id: number; nombre: string; telefono: string }) => void;
+    sucursales?: { id: number; nombre: string }[];
 }
 
-export default function ClienteNuevoModal({ visible, onDismiss, onClienteCreado }: ClienteNuevoModalProps) {
+export default function ClienteNuevoModal({ visible, onDismiss, onClienteCreado, sucursales = [] }: ClienteNuevoModalProps) {
     const { negocioId, sucursalId, rol } = useApp();
 
     const [nombre, setNombre] = useState('');
     const [telefono, setTelefono] = useState('');
+    const [selectedSucursalId, setSelectedSucursalId] = useState<number | null>(null);
     const [loading, setLoading] = useState(false);
-    const [errors, setErrors] = useState<{ nombre?: string; telefono?: string }>({});
-    const [touched, setTouched] = useState<{ nombre?: boolean; telefono?: boolean }>({});
+    const [errors, setErrors] = useState<{ nombre?: string; telefono?: string; sucursal?: string }>({});
+    const [touched, setTouched] = useState<{ nombre?: boolean; telefono?: boolean; sucursal?: boolean }>({});
 
     useEffect(() => {
         if (visible) {
             setNombre('');
             setTelefono('');
+            setSelectedSucursalId(null);
             setErrors({});
             setTouched({});
         }
     }, [visible]);
 
     useEffect(() => {
-        const newErrors: { nombre?: string; telefono?: string } = {};
+        const newErrors: { nombre?: string; telefono?: string; sucursal?: string } = {};
         if (touched.nombre && !nombre.trim()) newErrors.nombre = 'El nombre es obligatorio';
         if (touched.telefono) {
             if (!telefono) newErrors.telefono = 'El teléfono es obligatorio';
             else if (telefono.length < PHONE_MIN_LENGTH) newErrors.telefono = `Mínimo ${PHONE_MIN_LENGTH} dígitos`;
             else if (telefono.length > PHONE_MAX_LENGTH) newErrors.telefono = `Máximo ${PHONE_MAX_LENGTH} dígitos`;
         }
+        if (rol !== 'sucursal' && touched.sucursal && !selectedSucursalId) {
+            newErrors.sucursal = 'La sucursal es obligatoria';
+        }
         setErrors(newErrors);
-    }, [nombre, telefono, touched]);
+    }, [nombre, telefono, touched, selectedSucursalId, rol]);
 
-    const isFormValid = nombre.trim().length > 0 && telefono.length >= PHONE_MIN_LENGTH && telefono.length <= PHONE_MAX_LENGTH;
+    const isFormValid = nombre.trim().length > 0 && telefono.length >= PHONE_MIN_LENGTH && telefono.length <= PHONE_MAX_LENGTH && (rol === 'sucursal' || !!selectedSucursalId);
 
     const handleTelefonoChange = (text: string) => {
         const sanitized = text.replace(/\D/g, '').slice(0, PHONE_MAX_LENGTH);
@@ -58,7 +65,7 @@ export default function ClienteNuevoModal({ visible, onDismiss, onClienteCreado 
     };
 
     const handleGuardar = async () => {
-        setTouched({ nombre: true, telefono: true });
+        setTouched({ nombre: true, telefono: true, sucursal: true });
         if (!isFormValid) { Alert.alert('Error', 'Completa los campos correctamente.'); return; }
         if (!negocioId) { Alert.alert('Error', 'No se ha identificado el negocio'); return; }
 
@@ -66,7 +73,11 @@ export default function ClienteNuevoModal({ visible, onDismiss, onClienteCreado 
         try {
             await safeAction('ClienteNuevo', async () => {
                 const insertData: any = { nombre: nombre.trim(), telefono: telefono.trim(), negocio_id: negocioId };
-                if (rol === 'sucursal' && sucursalId) insertData.sucursal_id = sucursalId;
+                if (rol === 'sucursal' && sucursalId) {
+                    insertData.sucursal_id = sucursalId;
+                } else if (selectedSucursalId) {
+                    insertData.sucursal_id = selectedSucursalId;
+                }
 
                 const { data, error } = await supabase.from('clientes_bot').insert(insertData).select('id, nombre, telefono').single();
                 if (error) throw error;
@@ -130,6 +141,25 @@ export default function ClienteNuevoModal({ visible, onDismiss, onClienteCreado 
                                 right={telefono.length > 0 ? <TextInput.Affix text={`${telefono.length}/${PHONE_MIN_LENGTH}`} /> : undefined}
                             />
                             {errors.telefono && <HelperText type="error" visible>{errors.telefono}</HelperText>}
+                            
+                            {rol !== 'sucursal' && sucursales.length > 0 && (
+                                <View style={{ marginTop: 16 }}>
+                                    <View style={[styles.sectionHeader, { marginBottom: 8 }]}>
+                                        <MaterialIcons name="store" size={18} color="#38bdf8" />
+                                        <Text style={styles.sectionTitle}>Sucursal *</Text>
+                                    </View>
+                                    <KyrosSelector
+                                        options={sucursales.map(s => ({ label: s.nombre, value: s.id }))}
+                                        selectedValue={selectedSucursalId}
+                                        onValueChange={(val) => {
+                                            setSelectedSucursalId(val);
+                                            setTouched(prev => ({ ...prev, sucursal: true }));
+                                        }}
+                                        placeholder="Seleccionar Sucursal"
+                                    />
+                                    {errors.sucursal && <HelperText type="error" visible>{errors.sucursal}</HelperText>}
+                                </View>
+                            )}
                         </View>
 
                         {/* Actions */}

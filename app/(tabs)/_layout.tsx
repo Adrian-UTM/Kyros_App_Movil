@@ -98,7 +98,9 @@ export default function TabLayout() {
             <Tabs.Screen
                 name="sucursales"
                 options={{
-                    href: null, // Hidden - no longer needed as separate tab
+                    href: rol === 'dueño' ? undefined : null,
+                    title: 'Sucursales',
+                    tabBarIcon: ({ color }) => <MaterialIcons name="storefront" size={24} color={color} />,
                 }}
             />
             <Tabs.Screen
@@ -118,8 +120,8 @@ export default function TabLayout() {
             <Tabs.Screen
                 name="perfil"
                 options={{
-                    title: 'Sucursal',
-                    tabBarIcon: ({ color }) => <MaterialIcons name="store" size={24} color={color} />,
+                    title: rol === 'dueño' ? 'Mi Perfil' : 'Sucursal',
+                    tabBarIcon: ({ color }) => <MaterialIcons name={rol === 'dueño' ? "person" : "store"} size={24} color={color} />,
                 }}
             />
             {/* Hidden screens that exist but shouldn't show in tab bar */}

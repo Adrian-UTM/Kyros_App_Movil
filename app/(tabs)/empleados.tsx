@@ -1,12 +1,13 @@
 import React, { useState, useCallback } from 'react';
 import { StyleSheet, View, ScrollView, Alert } from 'react-native';
-import { Text, Avatar, List, Divider, useTheme, ActivityIndicator } from 'react-native-paper';
+import { Text, Avatar, List, Divider, useTheme, ActivityIndicator, Snackbar, Portal } from 'react-native-paper';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import { TouchableOpacity } from 'react-native';
 import KyrosScreen from '../../components/KyrosScreen';
 import KyrosCard from '../../components/KyrosCard';
 import KyrosButton from '../../components/KyrosButton';
+import KyrosSelector from '../../components/KyrosSelector';
 import EmpleadoFormModal from '../../components/EmpleadoFormModal';
 import { supabase } from '../../lib/supabaseClient';
 import { useApp } from '../../lib/AppContext';
@@ -31,6 +32,19 @@ export default function EmpleadosScreen() {
     const [modalVisible, setModalVisible] = useState(false);
     const [selectedEmpleado, setSelectedEmpleado] = useState<Empleado | null>(null);
 
+    // Filters
+    const [sucursales, setSucursales] = useState<{ id: number; nombre: string }[]>([]);
+    const [selectedBranchId, setSelectedBranchId] = useState<number | 'general'>('general');
+
+    // Snackbar for custom alerts
+    const [snackbarVisible, setSnackbarVisible] = useState(false);
+    const [snackbarMessage, setSnackbarMessage] = useState('');
+
+    const showMessage = (msg: string) => {
+        setSnackbarMessage(msg);
+        setSnackbarVisible(true);
+    };
+
     const { negocioId, sucursalId, rol, isLoading: appLoading } = useApp();
 
     const fetchEmpleados = useCallback(async (showIndicator = true) => {
@@ -39,6 +53,14 @@ export default function EmpleadosScreen() {
         setError(null);
 
         try {
+            if (rol !== 'sucursal') {
+                const { data: sucursalesData } = await supabase
+                    .from('sucursales')
+                    .select('id, nombre')
+                    .eq('negocio_id', negocioId);
+                setSucursales(sucursalesData || []);
+            }
+
             let query = supabase
                 .from('empleados')
                 .select('id, nombre, especialidad, sucursal_id, disponible, sucursales(nombre)')
@@ -134,6 +156,7 @@ export default function EmpleadosScreen() {
             if (error) throw error;
             // Optimistic update
             setEmpleados(prev => prev.map(e => e.id === emp.id ? { ...e, disponible: newDisponible } : e));
+            showMessage(`El empleado ${emp.nombre} ahora está ${newDisponible ? 'disponible' : 'inactivo'}.`);
         } catch (err: any) {
             Alert.alert('Error', err.message || 'No se pudo actualizar la disponibilidad');
         }
@@ -149,16 +172,32 @@ export default function EmpleadosScreen() {
         setModalVisible(true);
     };
 
-    const activos = empleados;
+    const activos = empleados.filter(e => {
+        if (selectedBranchId === 'general') return true;
+        return e.sucursal_id === selectedBranchId;
+    });
 
     return (
         <KyrosScreen title="Empleados">
             <ScrollView style={styles.container}>
-                {/* Add Button */}
-                <View style={styles.topSection}>
+                {/* Add Button & Filter */}
+                <View style={[styles.topSection, { flexDirection: 'column', gap: 16, backgroundColor: '#111827', padding: 16, margin: 16, borderRadius: 16, borderWidth: 1, borderColor: '#1e293b' }]}>
                     <KyrosButton mode="contained" icon="account-plus" onPress={openCreate}>
                         Agregar Empleado
                     </KyrosButton>
+                    
+                    {rol !== 'sucursal' && sucursales.length > 0 && (
+                        <KyrosSelector
+                            options={[
+                                { label: 'Todas las Sucursales', value: 'general' },
+                                ...sucursales.map(s => ({ label: s.nombre, value: s.id }))
+                            ]}
+                            selectedValue={selectedBranchId}
+                            onValueChange={setSelectedBranchId}
+                            placeholder="Filtrar por sucursal"
+                            icon="store"
+                        />
+                    )}
                 </View>
 
                 {/* Loading */}
@@ -252,6 +291,18 @@ export default function EmpleadosScreen() {
                     fetchEmpleados(true);
                 }}
             />
+
+            <Portal>
+                <Snackbar
+                    visible={snackbarVisible}
+                    onDismiss={() => setSnackbarVisible(false)}
+                    duration={3000}
+                    style={{ backgroundColor: '#1E293B', bottom: 20 }}
+                    action={{ label: 'Cerrar', onPress: () => setSnackbarVisible(false), textColor: '#38bdf8' }}
+                >
+                    <Text style={{ color: '#fff' }}>{snackbarMessage}</Text>
+                </Snackbar>
+            </Portal>
         </KyrosScreen>
     );
 }

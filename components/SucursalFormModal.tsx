@@ -36,17 +36,9 @@ export default function SucursalFormModal({ visible, sucursal, onDismiss, onSave
     const [telefono, setTelefono] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    
-    // Schedule state
-    const [horaApertura, setHoraApertura] = useState('09:00');
-    const [horaCierre, setHoraCierre] = useState('20:00');
-    const [descansoInicio, setDescansoInicio] = useState('');
-    const [descansoFin, setDescansoFin] = useState('');
-    const [diasAbiertos, setDiasAbiertos] = useState<number[]>([1,2,3,4,5,6]); // 1=Mon...7=Sun
-    
     const [showPassword, setShowPassword] = useState(false);
     const [saving, setSaving] = useState(false);
-    const [touched, setTouched] = useState({ nombre: false, direccion: false, telefono: false, email: false, password: false, horario: false });
+    const [touched, setTouched] = useState({ nombre: false, direccion: false, telefono: false, email: false, password: false });
 
     useEffect(() => {
         if (visible) {
@@ -55,12 +47,7 @@ export default function SucursalFormModal({ visible, sucursal, onDismiss, onSave
             setTelefono(sucursal?.telefono || '');
             setEmail(sucursal?.cuenta_email || '');
             setPassword(sucursal?.cuenta_password || '');
-            setHoraApertura(sucursal?.hora_apertura || '09:00');
-            setHoraCierre(sucursal?.hora_cierre || '20:00');
-            setDescansoInicio(sucursal?.descanso_inicio || '');
-            setDescansoFin(sucursal?.descanso_fin || '');
-            setDiasAbiertos(sucursal?.dias_abiertos || [1,2,3,4,5,6]);
-            setTouched({ nombre: false, direccion: false, telefono: false, email: false, password: false, horario: false });
+            setTouched({ nombre: false, direccion: false, telefono: false, email: false, password: false });
             setShowPassword(false);
         }
     }, [visible]);
@@ -80,16 +67,8 @@ export default function SucursalFormModal({ visible, sucursal, onDismiss, onSave
         isPasswordValid;
 
     const handleSave = async () => {
-        setTouched({ nombre: true, direccion: true, telefono: true, email: true, password: true, horario: true });
+        setTouched({ nombre: true, direccion: true, telefono: true, email: true, password: true });
         if (!isFormValid) { Alert.alert('Error', 'Completa los campos correctamente.'); return; }
-        
-        // Basic schedule validation
-        if (!/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(horaApertura) || !/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(horaCierre)) {
-            Alert.alert('Error', 'Formato de hora de apertura/cierre inválido (HH:MM).'); return;
-        }
-        if (diasAbiertos.length === 0) {
-            Alert.alert('Error', 'Selecciona al menos un día de apertura.'); return;
-        }
 
         if (!negocioId) { Alert.alert('Error', 'No hay negocio_id.'); return; }
 
@@ -101,12 +80,7 @@ export default function SucursalFormModal({ visible, sucursal, onDismiss, onSave
                     direccion: direccion.trim(),
                     telefono: telefono,
                     cuenta_email: email.trim(),
-                    negocio_id: negocioId,
-                    hora_apertura: horaApertura.padEnd(5, ':00'),
-                    hora_cierre: horaCierre.padEnd(5, ':00'),
-                    descanso_inicio: descansoInicio ? descansoInicio.padEnd(5, ':00') : null,
-                    descanso_fin: descansoFin ? descansoFin.padEnd(5, ':00') : null,
-                    dias_abiertos: diasAbiertos,
+                    negocio_id: negocioId
                 };
 
                 if (password.trim().length > 0) {
@@ -194,75 +168,6 @@ export default function SucursalFormModal({ visible, sucursal, onDismiss, onSave
                                     {telefono.length === 0 ? 'El teléfono es requerido' : `Mínimo 10 dígitos (${telefono.length}/10)`}
                                 </HelperText>
                             )}
-                        </View>
-
-                        {/* Horarios */}
-                        <View style={styles.section}>
-                            <View style={styles.sectionHeader}>
-                                <MaterialIcons name="schedule" size={18} color="#38bdf8" />
-                                <Text style={styles.sectionTitle}>Horarios de Operación</Text>
-                            </View>
-                            
-                            <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
-                                <View style={{ flex: 1 }}>
-                                    <TextInput
-                                        mode="outlined" label="Apertura (HH:MM)" value={horaApertura} onChangeText={setHoraApertura}
-                                        style={styles.input} textColor="#e2e8f0" outlineColor="#334155" activeOutlineColor="#38bdf8"
-                                        theme={{ colors: { onSurfaceVariant: '#94a3b8' } }}
-                                        placeholder="09:00"
-                                    />
-                                </View>
-                                <View style={{ flex: 1 }}>
-                                    <TextInput
-                                        mode="outlined" label="Cierre (HH:MM)" value={horaCierre} onChangeText={setHoraCierre}
-                                        style={styles.input} textColor="#e2e8f0" outlineColor="#334155" activeOutlineColor="#38bdf8"
-                                        theme={{ colors: { onSurfaceVariant: '#94a3b8' } }}
-                                        placeholder="20:00"
-                                    />
-                                </View>
-                            </View>
-
-                            <Text style={{ color: '#94a3b8', fontSize: 13, marginBottom: 8, marginTop: 4 }}>Horario de Descanso (Opcional)</Text>
-                            <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16 }}>
-                                <View style={{ flex: 1 }}>
-                                    <TextInput
-                                        mode="outlined" label="Inicio (HH:MM)" value={descansoInicio} onChangeText={setDescansoInicio}
-                                        style={styles.input} textColor="#e2e8f0" outlineColor="#334155" activeOutlineColor="#38bdf8"
-                                        theme={{ colors: { onSurfaceVariant: '#94a3b8' } }}
-                                        placeholder="14:00"
-                                    />
-                                </View>
-                                <View style={{ flex: 1 }}>
-                                    <TextInput
-                                        mode="outlined" label="Fin (HH:MM)" value={descansoFin} onChangeText={setDescansoFin}
-                                        style={styles.input} textColor="#e2e8f0" outlineColor="#334155" activeOutlineColor="#38bdf8"
-                                        theme={{ colors: { onSurfaceVariant: '#94a3b8' } }}
-                                        placeholder="15:00"
-                                    />
-                                </View>
-                            </View>
-                            
-                            <Text style={{ color: '#94a3b8', fontSize: 13, marginBottom: 8 }}>Días Abiertos</Text>
-                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                                {['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map((d, i) => {
-                                    const dayVal = i + 1; // 1-7 (Lun-Dom)
-                                    const isSelected = diasAbiertos.includes(dayVal);
-                                    return (
-                                        <TouchableOpacity
-                                            key={d}
-                                            style={[styles.dayChip, isSelected && styles.dayChipSelected]}
-                                            onPress={() => {
-                                                setDiasAbiertos(prev => 
-                                                    prev.includes(dayVal) ? prev.filter(x => x !== dayVal) : [...prev, dayVal].sort()
-                                                );
-                                            }}
-                                        >
-                                            <Text style={[styles.dayChipText, isSelected && styles.dayChipTextSelected]}>{d}</Text>
-                                        </TouchableOpacity>
-                                    );
-                                })}
-                            </View>
-                            {touched.horario && diasAbiertos.length === 0 && <HelperText type="error" visible>Selecciona al menos un día</HelperText>}
                         </View>
 
                         {/* Account */}

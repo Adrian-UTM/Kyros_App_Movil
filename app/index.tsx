@@ -179,7 +179,8 @@ export default function LoginScreen() {
               style={styles.loginButton}
               labelStyle={styles.loginButtonLabel}
               contentStyle={styles.loginButtonContent}
-              buttonColor="#1e3a5f"
+              buttonColor="#3b82f6"
+              textColor="#ffffff"
             >
               {loading ? 'Ingresando...' : 'Ingresar'}
             </Button>

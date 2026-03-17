@@ -77,8 +77,19 @@ export default function PerfilScreen() {
     useEffect(() => {
         if (rol === 'sucursal' && sucursalId) {
             loadBranchData();
+        } else if (rol === 'dueño' && negocioId) {
+            loadBusinessData();
         }
-    }, [rol, sucursalId]);
+    }, [rol, sucursalId, negocioId]);
+
+    const loadBusinessData = async () => {
+        try {
+            const { data } = await supabase.from('negocios').select('nombre').eq('id', negocioId).single();
+            if (data) setNegocioNombre(data.nombre);
+        } catch (err) {
+            console.error('Error loading business data:', err);
+        }
+    };
 
     const calculateEndTime = (start: string, duration: number) => {
         if (!start) return '';
@@ -325,7 +336,7 @@ export default function PerfilScreen() {
 
     return (
         <>
-            <KyrosScreen title={rol === 'sucursal' ? 'Mi Sucursal' : 'Perfil'}>
+            <KyrosScreen title={rol === 'sucursal' ? 'Mi Sucursal' : 'Mi Perfil'}>
             <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
 
                 {/* SUCRUSAL ONLY: HEADER WITH QR */}
@@ -440,6 +451,16 @@ export default function PerfilScreen() {
                                 description="Correo electrónico"
                                 left={props => <List.Icon {...props} icon="email" />}
                             />
+                            {rol === 'dueño' && (
+                                <>
+                                    <Divider />
+                                    <List.Item
+                                        title={negocioNombre || 'Cargando...'}
+                                        description="Negocio"
+                                        left={props => <List.Icon {...props} icon="briefcase" />}
+                                    />
+                                </>
+                            )}
                         </KyrosCard>
                     </>
                 )}

@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { StyleSheet, View, ScrollView, Alert } from 'react-native';
-import { Text, List, Divider, useTheme, ActivityIndicator } from 'react-native-paper';
+import { Text, List, Divider, useTheme, ActivityIndicator, DataTable } from 'react-native-paper';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import { TouchableOpacity } from 'react-native';
@@ -257,43 +257,30 @@ export default function SucursalesScreen() {
 
                 {/* List */}
                 {!loading && !error && sucursales.length > 0 && (
-                    <KyrosCard title={`Sucursales (${sucursales.length})`}>
-                        {sucursales.map((suc, index) => (
-                            <React.Fragment key={suc.id}>
-                                <List.Item
-                                    title={suc.nombre}
-                                    titleStyle={{ color: '#f1f5f9', fontWeight: 'bold' }}
-                                    description={() => (
-                                        <View style={{ marginTop: 4 }}>
-                                            <Text style={{ color: '#94a3b8', fontSize: 13, marginBottom: 4 }}>
-                                                {suc.direccion || 'Sin dirección'} • {suc.telefono || 'Sin teléfono'}
-                                            </Text>
-                                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                                <MaterialIcons name="schedule" size={14} color="#38bdf8" style={{ marginRight: 4 }} />
-                                                <Text style={{ color: '#38bdf8', fontSize: 13 }}>
-                                                    {formatSchedule(suc)}
-                                                </Text>
-                                            </View>
-                                        </View>
-                                    )}
-                                    left={props => (
-                                        <List.Icon {...props} icon="store" color={theme.colors.primary} />
-                                    )}
-                                    right={canManage ? (props => (
-                                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                            <TouchableOpacity onPress={() => openEdit(suc)}>
-                                                <List.Icon {...props} icon="pencil" color={theme.colors.primary} />
+                    <View style={{ paddingHorizontal: 16 }}>
+                        <Text style={{ color: '#f8fafc', fontWeight: 'bold', fontSize: 18, marginBottom: 12 }}>Sucursales ({sucursales.length})</Text>
+                        {sucursales.map(suc => (
+                            <KyrosCard key={suc.id} style={{ marginBottom: 12 }}>
+                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <View style={{ flex: 1, paddingRight: 10 }}>
+                                        <Text style={{ color: '#38bdf8', fontWeight: 'bold', fontSize: 16, marginBottom: 4 }}>{suc.nombre}</Text>
+                                        <Text style={{ color: '#94a3b8', fontSize: 13, marginBottom: 2 }}><MaterialIcons name="phone" size={12}/> {suc.telefono || 'Sin teléfono'}</Text>
+                                        <Text style={{ color: '#94a3b8', fontSize: 13 }} numberOfLines={2}><MaterialIcons name="location-pin" size={12}/> {suc.direccion || 'Sin dirección'}</Text>
+                                    </View>
+                                    {canManage && (
+                                        <View style={{ flexDirection: 'row', gap: 12 }}>
+                                            <TouchableOpacity onPress={() => openEdit(suc)} style={{ padding: 10, backgroundColor: 'rgba(56,189,248,0.1)', borderRadius: 12 }}>
+                                                <MaterialIcons name="edit" size={20} color="#38bdf8" />
                                             </TouchableOpacity>
-                                            <TouchableOpacity onPress={() => handleDelete(suc)}>
-                                                <List.Icon {...props} icon="delete" color="#d32f2f" />
+                                            <TouchableOpacity onPress={() => handleDelete(suc)} style={{ padding: 10, backgroundColor: 'rgba(239,68,68,0.1)', borderRadius: 12 }}>
+                                                <MaterialIcons name="delete" size={20} color="#ef4444" />
                                             </TouchableOpacity>
                                         </View>
-                                    )) : undefined}
-                                />
-                                {index < sucursales.length - 1 && <Divider />}
-                            </React.Fragment>
+                                    )}
+                                </View>
+                            </KyrosCard>
                         ))}
-                    </KyrosCard>
+                    </View>
                 )}
 
                 <View style={{ height: 80 }} />

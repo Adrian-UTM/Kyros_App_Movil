@@ -2,6 +2,7 @@ import React from 'react';
 import { View, StyleSheet, SafeAreaView, StatusBar, Image, TouchableOpacity } from 'react-native';
 import { Text, useTheme } from 'react-native-paper';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface KyrosScreenProps {
     children: React.ReactNode;
@@ -10,9 +11,10 @@ interface KyrosScreenProps {
 
 export default function KyrosScreen({ children, title }: KyrosScreenProps) {
     const theme = useTheme();
+    const insets = useSafeAreaInsets();
 
     return (
-        <SafeAreaView style={[styles.container, { backgroundColor: '#0a0f1e' }]}>
+        <View style={[styles.container, { backgroundColor: '#0a0f1e', paddingTop: insets.top }]}>
             <StatusBar
                 barStyle={'light-content'}
                 backgroundColor={'#0a0f1e'}
@@ -37,7 +39,7 @@ export default function KyrosScreen({ children, title }: KyrosScreenProps) {
             <View style={styles.content}>
                 {children}
             </View>
-        </SafeAreaView>
+        </View>
     );
 }
 
@@ -58,8 +60,8 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     logo: {
-        width: 100,
-        height: 28,
+        width: 120,
+        height: 32,
         resizeMode: 'contain',
     },
     separator: {

@@ -7,6 +7,7 @@ import { TouchableOpacity } from 'react-native';
 import KyrosScreen from '../../components/KyrosScreen';
 import KyrosCard from '../../components/KyrosCard';
 import KyrosButton from '../../components/KyrosButton';
+import KyrosSelector from '../../components/KyrosSelector';
 import { supabase } from '../../lib/supabaseClient';
 import { useApp } from '../../lib/AppContext';
 import ClienteNuevoModal from '../../components/ClienteNuevoModal';
@@ -18,6 +19,8 @@ interface Cliente {
     nombre: string;
     telefono: string | null;
     email?: string | null;
+    sucursal_id?: number | null;
+    sucursal_nombre?: string;
 }
 
 export default function ClientesScreen() {
@@ -27,6 +30,10 @@ export default function ClientesScreen() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
+
+    // State for filtering by branch
+    const [sucursales, setSucursales] = useState<{ id: number; nombre: string }[]>([]);
+    const [selectedBranchId, setSelectedBranchId] = useState<number | 'general'>('general');
 
     // Modals
     const [nuevoModalVisible, setNuevoModalVisible] = useState(false);
@@ -41,10 +48,19 @@ export default function ClientesScreen() {
         setError(null);
 
         try {
+            // Fetch branches if owner
+            if (rol !== 'sucursal') {
+                const { data: sucursalesData } = await supabase
+                    .from('sucursales')
+                    .select('id, nombre')
+                    .eq('negocio_id', negocioId);
+                setSucursales(sucursalesData || []);
+            }
+
             // Obtener clientes del negocio
             let query = supabase
                 .from('clientes_bot')
-                .select('id, nombre, telefono')
+                .select('id, nombre, telefono, sucursal_id, sucursales(nombre)')
                 .eq('negocio_id', negocioId);
 
             // Branch users only see their branch clients
@@ -55,8 +71,14 @@ export default function ClientesScreen() {
             const { data, error: fetchError } = await query.order('nombre');
 
             if (fetchError) throw fetchError;
-            setClientes(data || []);
-            setFilteredClientes(data || []);
+            
+            const mappedData = (data || []).map((c: any) => ({
+                ...c,
+                sucursal_nombre: c.sucursales?.nombre || 'General'
+            }));
+
+            setClientes(mappedData);
+            setFilteredClientes(mappedData);
 
         } catch (err: any) {
             console.error('Error fetching clientes:', err);
@@ -78,25 +100,32 @@ export default function ClientesScreen() {
         }, [fetchClientes, appLoading, negocioId])
     );
 
-    // Filtrar al buscar
+    // Filtrar al buscar y por sucursal
     useEffect(() => {
-        if (searchQuery.trim() === '') {
-            setFilteredClientes(clientes);
-        } else {
+        let result = clientes;
+
+        // Apply branch filter
+        if (selectedBranchId !== 'general') {
+            result = result.filter(c => c.sucursal_id === selectedBranchId || (c as any).sucursales?.id === selectedBranchId); // Adjusted depending on how it's mapped
+        }
+
+        // Apply search query
+        if (searchQuery.trim() !== '') {
             const query = searchQuery.toLowerCase();
-            setFilteredClientes(
-                clientes.filter(c =>
-                    c.nombre.toLowerCase().includes(query) ||
-                    (c.telefono && c.telefono.includes(query))
-                )
+            result = result.filter(c =>
+                c.nombre.toLowerCase().includes(query) ||
+                (c.telefono && c.telefono.includes(query))
             );
         }
-    }, [searchQuery, clientes]);
+
+        setFilteredClientes(result);
+    }, [searchQuery, clientes, selectedBranchId]);
 
     const getInitials = (name: string): string => {
+        if (!name) return '?';
         return name
             .split(' ')
-            .map(n => n[0])
+            .map(n => n?.[0] || '')
             .slice(0, 2)
             .join('')
             .toUpperCase();
@@ -126,27 +155,42 @@ export default function ClientesScreen() {
         <KyrosScreen title="Clientes">
             <ScrollView style={styles.container}>
                 {/* Search + Add */}
-                <View style={styles.topSection}>
-                    <TextInput
-                        label="Buscar cliente"
-                        mode="outlined"
-                        value={searchQuery}
-                        onChangeText={setSearchQuery}
-                        left={<TextInput.Icon icon="magnify" />}
-                        style={styles.searchInput}
-                        textColor="#e2e8f0"
-                        outlineColor="#334155"
-                        activeOutlineColor="#38bdf8"
-                        theme={{ colors: { onSurfaceVariant: '#94a3b8' } }}
-                    />
-                    <KyrosButton
-                        mode="contained"
-                        icon="account-plus"
-                        onPress={() => setNuevoModalVisible(true)}
-                        style={{ marginTop: 12 }}
-                    >
-                        Nuevo Cliente
-                    </KyrosButton>
+                <View style={[styles.topSection, { flexDirection: 'column', gap: 16 }]}>
+                    <View style={{ flexDirection: 'row', gap: 12 }}>
+                        <TextInput
+                            label="Buscar cliente"
+                            mode="outlined"
+                            value={searchQuery}
+                            onChangeText={setSearchQuery}
+                            left={<TextInput.Icon icon="magnify" />}
+                            style={[styles.searchInput, { flex: 1, marginBottom: 0 }]}
+                            textColor="#e2e8f0"
+                            outlineColor="#334155"
+                            activeOutlineColor="#38bdf8"
+                            theme={{ colors: { onSurfaceVariant: '#94a3b8' } }}
+                        />
+                        <KyrosButton 
+                            mode="contained" 
+                            icon="account-plus" 
+                            onPress={() => setNuevoModalVisible(true)}
+                            style={{ height: 50, justifyContent: 'center', marginTop: 6 }}
+                        >
+                            Agregar
+                        </KyrosButton>
+                    </View>
+                    
+                    {rol !== 'sucursal' && sucursales.length > 0 && (
+                        <KyrosSelector
+                            options={[
+                                { label: 'Todas las Sucursales', value: 'general' },
+                                ...sucursales.map(s => ({ label: s.nombre, value: s.id }))
+                            ]}
+                            selectedValue={selectedBranchId}
+                            onValueChange={setSelectedBranchId}
+                            placeholder="Filtrar por sucursal"
+                            icon="store"
+                        />
+                    )}
                 </View>
 
                 {/* Loading */}
@@ -158,7 +202,7 @@ export default function ClientesScreen() {
                 )}
 
                 {/* Error */}
-                {!loading && error && error.toLowerCase().includes('negocio') ? (
+                {!loading && error && error?.toLowerCase().includes('negocio') ? (
                     <View style={styles.centerState}>
                         <MaterialIcons name="storefront" size={64} color="#64748b" />
                         <Text style={[styles.stateText, { fontSize: 16, marginBottom: 8 }]}>Aún no tienes sucursales</Text>
@@ -196,7 +240,7 @@ export default function ClientesScreen() {
                                 </View>
                                 <View style={styles.clientInfo}>
                                     <Text style={styles.clientName}>{cliente.nombre}</Text>
-                                    <Text style={styles.clientPhone}>{cliente.telefono || 'Sin teléfono'}</Text>
+                                    <Text style={styles.clientPhone}>{cliente.telefono || 'Sin teléfono'} • {cliente.sucursal_nombre}</Text>
                                 </View>
                                 <View style={styles.clientActions}>
                                     <TouchableOpacity onPress={() => { setSelectedCliente(cliente); setEditModalVisible(true); }} style={styles.actionBtn}>
@@ -224,6 +268,7 @@ export default function ClientesScreen() {
 
             <ClienteNuevoModal
                 visible={nuevoModalVisible}
+                sucursales={sucursales}
                 onDismiss={() => setNuevoModalVisible(false)}
                 onClienteCreado={(newCliente) => {
                     setNuevoModalVisible(false);

@@ -8,6 +8,7 @@ import { Picker } from '@react-native-picker/picker';
 import KyrosScreen from '../../components/KyrosScreen';
 import KyrosCard from '../../components/KyrosCard';
 import KyrosButton from '../../components/KyrosButton';
+import KyrosSelector from '../../components/KyrosSelector';
 import { supabase } from '../../lib/supabaseClient';
 import { useApp } from '../../lib/AppContext';
 import { getLocalToday, formatDateTitle, getStartOfDayLocal, getEndOfDayLocal } from '../../lib/date';
@@ -382,13 +383,19 @@ export default function AgendaScreen() {
         return STATUS_COLORS[status] || STATUS_COLORS.confirmada;
     };
 
-    const handleStatusChange = async (citaId: number, newState: string) => {
+    const handleStatusChange = async (cita: Cita, newState: string) => {
         try {
             setLoading(true);
+            const updateData: any = { estado: newState };
+            if (newState === 'completada') {
+                updateData.fecha_completado = new Date().toISOString();
+                updateData.total_pagado = cita.monto_total || getTotalPrecio(cita) || 0;
+            }
+
             const { error } = await supabase
                 .from(TABLES.citas)
-                .update({ estado: newState })
-                .eq('id', citaId);
+                .update(updateData)
+                .eq('id', cita.id);
 
             if (error) throw error;
             fetchCitas();
@@ -422,43 +429,46 @@ export default function AgendaScreen() {
                     {/* Encabezado y Filtros Movidos dentro del Scroll para maximizar espacio */}
                     <View style={{ gap: 12, marginBottom: 8 }}>
                         <View style={[styles.headerContainer, { backgroundColor: '#111827', borderRadius: 16 }]}>
-                            <Text variant="headlineSmall" style={styles.headerTitle}>
+                            <Text variant="headlineSmall" style={styles.headerTitle} numberOfLines={1}>
                                 Agenda {formatDateTitle(selectedDate)}
                             </Text>
 
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                                <TouchableOpacity onPress={() => setCalendarVisible(!calendarVisible)} style={styles.calendarToggleBtn}>
-                                    <MaterialIcons name={calendarVisible ? "event-busy" : "event"} size={26} color="#3b82f6" />
-                                </TouchableOpacity>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+                                    <TouchableOpacity onPress={() => setCalendarVisible(!calendarVisible)} style={styles.calendarToggleBtn}>
+                                        <MaterialIcons name={calendarVisible ? "event-busy" : "event"} size={22} color="#3b82f6" />
+                                    </TouchableOpacity>
 
-                                <KyrosButton
-                                    onPress={() => router.push(`/citas/nueva?fecha=${selectedDate}`)}
-                                    style={styles.newButton}
-                                    icon="plus"
-                                    mode="contained"
-                                    compact
-                                >
-                                    Nueva
-                                </KyrosButton>
-                            </View>
+                                    <TouchableOpacity
+                                        onPress={() => router.push(`/citas/nueva?fecha=${selectedDate}`)}
+                                        style={{
+                                            backgroundColor: '#1E66FF',
+                                            paddingHorizontal: 16,
+                                            paddingVertical: 10,
+                                            borderRadius: 24,
+                                            flexDirection: 'row',
+                                            alignItems: 'center',
+                                            gap: 6
+                                        }}
+                                    >
+                                        <MaterialIcons name="add" size={18} color="#ffffff" />
+                                        <Text style={{ color: '#ffffff', fontWeight: 'bold', fontSize: 13 }}>Nueva</Text>
+                                    </TouchableOpacity>
+                                </View>
                         </View>
 
                         {/* Filtro de Sucursal (Visible solo para Dueño) */}
                         {rol === 'dueño' && (
-                            <View style={[styles.filterContainer, { backgroundColor: '#111827', borderRadius: 16 }]}>
-                                <MaterialIcons name="store" size={20} color="#94a3b8" style={{ marginRight: 8 }} />
-                                <View style={styles.pickerWrapper}>
-                                    <Picker
-                                        selectedValue={selectedSucursal}
-                                        onValueChange={(itemValue) => setSelectedSucursal(itemValue)}
-                                        style={styles.picker}
-                                    >
-                                        <Picker.Item label="Todas las sucursales" value="all" />
-                                        {sucursalesDisponibles.map(s => (
-                                            <Picker.Item key={s.id} label={s.nombre} value={s.id} />
-                                        ))}
-                                    </Picker>
-                                </View>
+                            <View style={{ marginBottom: 4 }}>
+                                <KyrosSelector
+                                    options={[
+                                        { label: 'Todas las sucursales', value: 'all' },
+                                        ...sucursalesDisponibles.map(s => ({ label: s.nombre, value: s.id }))
+                                    ]}
+                                    selectedValue={selectedSucursal}
+                                    onValueChange={(val) => setSelectedSucursal(val)}
+                                    icon="store"
+                                    style={{ backgroundColor: '#111827', borderWidth: 0 }}
+                                />
                             </View>
                         )}
                     </View>
@@ -679,19 +689,19 @@ export default function AgendaScreen() {
                                                 )}
 
                                                 {cita.estado === 'pendiente_pago' && (
-                                                    <TouchableOpacity onPress={() => handleStatusChange(cita.id, 'completada')} style={[styles.actionBtn, styles.actionPay]}>
+                                                    <TouchableOpacity onPress={() => handleStatusChange(cita, 'completada')} style={[styles.actionBtn, styles.actionPay]}>
                                                         <MaterialIcons name="payments" size={18} color="#22c55e" />
                                                     </TouchableOpacity>
                                                 )}
 
                                                 {cita.estado !== 'completada' && cita.estado !== 'pendiente_pago' && cita.estado !== 'cancelada' && (
-                                                    <TouchableOpacity onPress={() => handleStatusChange(cita.id, 'completada')} style={[styles.actionBtn, styles.actionComplete]}>
+                                                    <TouchableOpacity onPress={() => handleStatusChange(cita, 'completada')} style={[styles.actionBtn, styles.actionComplete]}>
                                                         <MaterialIcons name="check" size={18} color="#38bdf8" />
                                                     </TouchableOpacity>
                                                 )}
 
                                                 {cita.estado !== 'cancelada' && cita.estado !== 'completada' && (
-                                                    <TouchableOpacity onPress={() => handleStatusChange(cita.id, 'cancelada')} style={[styles.actionBtn, styles.actionCancel]}>
+                                                    <TouchableOpacity onPress={() => handleStatusChange(cita, 'cancelada')} style={[styles.actionBtn, styles.actionCancel]}>
                                                         <MaterialIcons name="close" size={18} color="#ef4444" />
                                                     </TouchableOpacity>
                                                 )}
@@ -723,17 +733,20 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontWeight: 'bold',
         fontSize: 18,
-        color: '#f8fafc'
+        color: '#f8fafc',
+        flex: 1,
+        marginRight: 8
     },
     calendarToggleBtn: {
-        padding: 8,
+        padding: 6,
         borderRadius: 20,
         backgroundColor: '#111827',
-        borderWidth: 2,
+        borderWidth: 1,
         borderColor: '#475569'
     },
     newButton: {
         borderRadius: 20,
+        height: 36,
     },
     filterContainer: {
         flexDirection: 'row',

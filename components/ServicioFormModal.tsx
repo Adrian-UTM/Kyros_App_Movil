@@ -6,6 +6,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabaseClient';
 import { useApp } from '../lib/AppContext';
 import { safeAction } from '../lib/safeAction';
+import KyrosSelector from './KyrosSelector';
 
 interface Servicio {
     id: number;
@@ -15,6 +16,7 @@ interface Servicio {
     activo?: boolean;
     descripcion?: string;
     imagen_url?: string | null;
+    sucursal_id?: number | null;
 }
 
 interface ServicioFormModalProps {
@@ -26,7 +28,7 @@ interface ServicioFormModalProps {
 
 export default function ServicioFormModal({ visible, servicio, onDismiss, onServicioGuardado }: ServicioFormModalProps) {
     const theme = useTheme();
-    const { negocioId, sucursalId } = useApp();
+    const { negocioId, sucursalId, rol } = useApp();
 
     const [nombre, setNombre] = useState('');
     const [precio, setPrecio] = useState('');
@@ -35,6 +37,15 @@ export default function ServicioFormModal({ visible, servicio, onDismiss, onServ
     const [imagenUrl, setImagenUrl] = useState<string | null>(null);
     const [imageUploading, setImageUploading] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [selectedSucursalId, setSelectedSucursalId] = useState<number | null>(null);
+    const [sucursales, setSucursales] = useState<{id: number, nombre: string}[]>([]);
+
+    useEffect(() => {
+        if (visible && rol !== 'sucursal' && negocioId) {
+            supabase.from('sucursales').select('id, nombre').eq('negocio_id', negocioId)
+                .then(({ data }) => setSucursales(data || []));
+        }
+    }, [visible, rol, negocioId]);
 
     useEffect(() => {
         if (servicio) {
@@ -43,12 +54,14 @@ export default function ServicioFormModal({ visible, servicio, onDismiss, onServ
             setDuracion(servicio.duracion_aprox_minutos?.toString() || '');
             setDescripcion(servicio.descripcion || '');
             setImagenUrl(servicio.imagen_url || null);
+            setSelectedSucursalId(servicio.sucursal_id || null);
         } else {
             setNombre('');
             setPrecio('');
             setDuracion('30');
             setDescripcion('');
             setImagenUrl(null);
+            setSelectedSucursalId(null);
         }
     }, [servicio, visible]);
 
@@ -147,6 +160,7 @@ export default function ServicioFormModal({ visible, servicio, onDismiss, onServ
                     duracion_aprox_minutos: duracionNum,
                     descripcion: descripcion.trim(),
                     imagen_url: imagenUrl,
+                    sucursal_id: rol === 'sucursal' ? sucursalId : selectedSucursalId
                 };
 
                 if (servicio) {
@@ -163,8 +177,7 @@ export default function ServicioFormModal({ visible, servicio, onDismiss, onServ
                 } else {
                     const insertPayload = {
                         ...payload,
-                        negocio_id: negocioId,
-                        sucursal_id: sucursalId
+                        negocio_id: negocioId
                     };
                     const { data, error } = await supabase
                         .from('servicios')
@@ -316,6 +329,20 @@ export default function ServicioFormModal({ visible, servicio, onDismiss, onServ
                             activeOutlineColor="#38bdf8"
                             theme={{ colors: { onSurfaceVariant: '#94a3b8' } }}
                         />
+
+                        {rol !== 'sucursal' && (
+                            <View style={{ marginBottom: 16 }}>
+                                <Text style={{ color: '#94a3b8', fontSize: 13, fontWeight: '700', marginBottom: 8 }}>Asignar a Sucursal</Text>
+                                <KyrosSelector
+                                    options={[
+                                        { label: 'Global (Todas)', value: null },
+                                        ...sucursales.map(s => ({ label: s.nombre, value: s.id }))
+                                    ]}
+                                    selectedValue={selectedSucursalId}
+                                    onValueChange={(val) => setSelectedSucursalId(val)}
+                                />
+                            </View>
+                        )}
 
                         <View style={styles.actions}>
                             <TouchableOpacity onPress={onDismiss} disabled={loading} style={styles.cancelBtn}>

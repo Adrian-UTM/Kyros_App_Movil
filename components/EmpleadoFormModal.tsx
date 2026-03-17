@@ -5,6 +5,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabaseClient';
 import { useApp } from '../lib/AppContext';
 import { safeAction } from '../lib/safeAction';
+import KyrosSelector from './KyrosSelector';
 
 interface Sucursal { id: number; nombre: string; }
 interface Servicio { id: number; nombre: string; }
@@ -180,20 +181,15 @@ export default function EmpleadoFormModal({ visible, empleado, onDismiss, onSave
                                             <MaterialIcons name="store" size={18} color="#38bdf8" />
                                             <Text style={styles.sectionTitle}>Sucursal *</Text>
                                         </View>
-                                        <View style={styles.chipContainer}>
-                                            {sucursales.map(s => {
-                                                const selected = selectedSucursalId === s.id;
-                                                return (
-                                                    <TouchableOpacity
-                                                        key={s.id}
-                                                        onPress={() => setSelectedSucursalId(s.id)}
-                                                        style={[styles.chip, selected && styles.chipSelected]}
-                                                    >
-                                                        <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{s.nombre}</Text>
-                                                    </TouchableOpacity>
-                                                );
-                                            })}
-                                        </View>
+                                        <KyrosSelector
+                                            options={sucursales.map(s => ({ label: s.nombre, value: s.id }))}
+                                            selectedValue={selectedSucursalId}
+                                            onValueChange={(val) => {
+                                                setSelectedSucursalId(val);
+                                                setTouched(t => ({ ...t, sucursal: true }));
+                                            }}
+                                            placeholder="Seleccionar Sucursal"
+                                        />
                                         {touched.sucursal && !selectedSucursalId && <HelperText type="error" visible>Selecciona una sucursal</HelperText>}
                                     </View>
                                 )}
@@ -205,20 +201,13 @@ export default function EmpleadoFormModal({ visible, empleado, onDismiss, onSave
                                             <MaterialIcons name="content-cut" size={18} color="#38bdf8" />
                                             <Text style={styles.sectionTitle}>Servicios ({selectedServiciosIds.length})</Text>
                                         </View>
-                                        <View style={styles.chipContainer}>
-                                            {servicios.map(s => {
-                                                const selected = selectedServiciosIds.includes(s.id);
-                                                return (
-                                                    <TouchableOpacity
-                                                        key={s.id}
-                                                        onPress={() => toggleServicio(s.id)}
-                                                        style={[styles.chip, selected && styles.chipSelected]}
-                                                    >
-                                                        <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{s.nombre}</Text>
-                                                    </TouchableOpacity>
-                                                );
-                                            })}
-                                        </View>
+                                        <KyrosSelector
+                                            options={servicios.map(s => ({ label: s.nombre, value: s.id }))}
+                                            selectedValue={selectedServiciosIds}
+                                            onValueChange={(vals) => setSelectedServiciosIds(vals as number[])}
+                                            placeholder="Seleccionar Servicios"
+                                            multiSelect={true}
+                                        />
                                     </View>
                                 )}
 

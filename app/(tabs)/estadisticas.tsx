@@ -3,8 +3,10 @@ import { StyleSheet, View, ScrollView, TouchableOpacity, ActivityIndicator, Dime
 import { Text, useTheme } from 'react-native-paper';
 import { MaterialIcons } from '@expo/vector-icons';
 import Svg, { G, Path, Circle } from 'react-native-svg';
+import { Picker } from '@react-native-picker/picker';
 import KyrosScreen from '../../components/KyrosScreen';
 import KyrosCard from '../../components/KyrosCard';
+import KyrosSelector from '../../components/KyrosSelector';
 import { useApp } from '../../lib/AppContext';
 import { supabase } from '../../lib/supabaseClient';
 
@@ -13,8 +15,8 @@ const DonutChart = ({ data, size = 150 }: { data: { name: string, count: number,
     const radius = (size - strokeWidth) / 2;
     const center = size / 2;
 
-    const total = data.reduce((sum, item) => sum + item.count, 0);
-    if (total === 0) return <View style={{ width: size, height: size, borderRadius: size / 2, borderWidth: strokeWidth, borderColor: '#334155' }} />;
+    const total = data ? data.reduce((sum, item) => sum + (item?.count || 0), 0) : 0;
+    if (total === 0 || !data || data.length === 0) return <View style={{ width: size, height: size, borderRadius: size / 2, borderWidth: strokeWidth, borderColor: '#334155' }} />;
 
     let currentAngle = 0;
 
@@ -52,25 +54,48 @@ const DonutChart = ({ data, size = 150 }: { data: { name: string, count: number,
 
 export default function EstadisticasScreen() {
     const theme = useTheme();
-    const { rol, sucursalId } = useApp();
+    const { rol, sucursalId, negocioId: appNegocioId } = useApp();
     const screenWidth = Dimensions.get('window').width;
+    const isOwner = rol !== 'sucursal';
 
     const [loading, setLoading] = useState(true);
     const [servicesLoading, setServicesLoading] = useState(true);
+    
+    // Revenue States
     const [viewMode, setViewMode] = useState<'day' | 'week' | 'month'>('day');
     const [currentDate, setCurrentDate] = useState(new Date());
     const [revenueData, setRevenueData] = useState<{ name: string, value: number }[]>([]);
-    const [servicesData, setServicesData] = useState<{ name: string, count: number, color: string }[]>([]);
     const [revenueTotal, setRevenueTotal] = useState(0);
+    const [revenueBranchId, setRevenueBranchId] = useState<number | null>(null);
 
-    const [donutModalVisible, setDonutModalVisible] = useState(false);
-    const [revenueModalVisible, setRevenueModalVisible] = useState(false);
+    // Full screen
+    const [fullScreenChart, setFullScreenChart] = useState<'revenue' | 'citas' | 'globalServices' | 'branchServices' | null>(null);
+
+    // Citas States
+    const [citasPorSucursalData, setCitasPorSucursalData] = useState<{ name: string, value: number }[]>([]);
+    
+    // Services States
+    const [globalServicesData, setGlobalServicesData] = useState<{ name: string, count: number, color: string }[]>([]);
+    const [branchServicesData, setBranchServicesData] = useState<{ name: string, count: number, color: string }[]>([]);
+    const [selectedBranchId, setSelectedBranchId] = useState<number | null>(null);
+
+    const [sucursales, setSucursales] = useState<{id: number, nombre: string}[]>([]);
+
+    useEffect(() => {
+        if (isOwner && appNegocioId) {
+            supabase.from('sucursales').select('id, nombre').eq('negocio_id', appNegocioId)
+                .then(({ data }) => {
+                    setSucursales(data || []);
+                    if (data && data.length > 0) setSelectedBranchId(data[0].id);
+                });
+        }
+    }, [isOwner, appNegocioId]);
 
     // ──────────────────────────────────────────────
-    // Load revenue data (filtered by date/period)
+    // Load revenue & citas data
     // ──────────────────────────────────────────────
     const loadRevenueData = useCallback(async () => {
-        if (rol !== 'sucursal' || !sucursalId) {
+        if (!appNegocioId) {
             setLoading(false);
             return;
         }
@@ -79,13 +104,22 @@ export default function EstadisticasScreen() {
         try {
             const { startDate, endDate } = getDateRange(currentDate, viewMode);
 
-            const { data, error } = await supabase
+            let query = supabase
                 .from('citas')
-                .select('id, total_pagado, fecha_completado')
-                .eq('sucursal_id', sucursalId)
+                .select('id, total_pagado, monto_total, fecha_completado, sucursal_id')
+                .eq('negocio_id', appNegocioId)
                 .eq('estado', 'completada')
                 .gte('fecha_completado', startDate)
                 .lte('fecha_completado', endDate);
+
+            if (!isOwner && sucursalId) {
+                query = query.eq('sucursal_id', sucursalId);
+            }
+            if (isOwner && revenueBranchId) {
+                query = query.eq('sucursal_id', revenueBranchId);
+            }
+
+            const { data, error } = await query;
 
             if (error) throw error;
 
@@ -95,105 +129,119 @@ export default function EstadisticasScreen() {
             else if (viewMode === 'week') groupedData = groupByDayOfWeek(data || []);
             else groupedData = groupByDayOfMonth(data || [], endDate);
 
+            // Filter revenue data for owner so it shows global revenue
             setRevenueData(groupedData);
-            setRevenueTotal((data || []).reduce((sum, cita) => sum + (cita.total_pagado || 0), 0));
+            setRevenueTotal((data || []).reduce((sum, cita) => sum + (cita.total_pagado || cita.monto_total || 0), 0));
+
+            if (isOwner) {
+                const cpsCounts: Record<string, number> = {};
+                sucursales.forEach(s => cpsCounts[s.nombre] = 0);
+                (data || []).forEach(cita => {
+                    const sucName = sucursales.find(s => s.id === cita.sucursal_id)?.nombre || 'General / Eliminada';
+                    cpsCounts[sucName] = (cpsCounts[sucName] || 0) + 1;
+                });
+                setCitasPorSucursalData(Object.entries(cpsCounts).map(([name, value]) => ({ name, value })));
+            }
         } catch (error) {
             console.error('Error loading revenue data:', error);
         } finally {
             setLoading(false);
         }
-    }, [sucursalId, rol, currentDate, viewMode]);
+    }, [sucursalId, rol, currentDate, viewMode, appNegocioId, sucursales, isOwner, revenueBranchId]);
 
     // ──────────────────────────────────────────────
-    // Load services data ALL-TIME for the branch (NOT filtered by date)
+    // Load services data
     // ──────────────────────────────────────────────
     const loadServicesData = useCallback(async () => {
-        if (rol !== 'sucursal' || !sucursalId) {
+        if (!appNegocioId) {
             setServicesLoading(false);
             return;
         }
 
         setServicesLoading(true);
         try {
-            // Get ALL completed citas for this branch
-            const { data: allCitas, error: citasError } = await supabase
+            let query = supabase
                 .from('citas')
-                .select('id')
-                .eq('sucursal_id', sucursalId)
+                .select('id, sucursal_id')
+                .eq('negocio_id', appNegocioId)
                 .eq('estado', 'completada');
+
+            if (!isOwner && sucursalId) {
+                query = query.eq('sucursal_id', sucursalId);
+            }
+
+            const { data: allCitas, error: citasError } = await query;
 
             if (citasError) throw citasError;
 
             if (allCitas && allCitas.length > 0) {
                 const citaIds = allCitas.map((c: any) => c.id);
+                // Chunking might be needed if citaIds > 1000, but fine for MVP
                 const { data: csData } = await supabase
                     .from('citas_servicios')
-                    .select('servicio_id, servicios(nombre)')
+                    .select('cita_id, servicio_id, servicios(nombre)')
                     .in('cita_id', citaIds);
 
                 if (csData) {
-                    const counts: Record<string, number> = {};
+                    const citaMap = new Map();
+                    allCitas.forEach(c => citaMap.set(c.id, c.sucursal_id));
+
+                    const globalCounts: Record<string, number> = {};
+                    const branchCounts: Record<string, number> = {};
+
                     csData.forEach((row: any) => {
                         const name = row.servicios?.nombre || 'Desconocido';
-                        counts[name] = (counts[name] || 0) + 1;
+                        const sucId = citaMap.get(row.cita_id);
+
+                        globalCounts[name] = (globalCounts[name] || 0) + 1;
+                        if (sucId === selectedBranchId) {
+                            branchCounts[name] = (branchCounts[name] || 0) + 1;
+                        }
                     });
 
-                    const colors = ['#3E82F7', '#04B76B', '#FF8F28', '#FF4E8B', '#8E5FF5', '#00CFE8'];
-                    const servicesPie = Object.entries(counts)
-                        .map(([name, count], index) => ({
-                            name,
-                            count,
-                            color: colors[index % colors.length]
-                        }))
+                    const colors = ['#3E82F7', '#04B76B', '#FF8F28', '#FF4E8B', '#8E5FF5', '#00CFE8', '#EAB308', '#A855F7'];
+                    
+                    const gPie = Object.entries(globalCounts)
+                        .map(([name, count], index) => ({ name, count, color: colors[index % colors.length] }))
+                        .sort((a, b) => b.count - a.count);
+                    
+                    const bPie = Object.entries(branchCounts)
+                        .map(([name, count], index) => ({ name, count, color: colors[index % colors.length] }))
                         .sort((a, b) => b.count - a.count);
 
-                    setServicesData(servicesPie);
+                    setGlobalServicesData(gPie);
+                    setBranchServicesData(bPie);
                 } else {
-                    setServicesData([]);
+                    setGlobalServicesData([]);
+                    setBranchServicesData([]);
                 }
             } else {
-                setServicesData([]);
+                setGlobalServicesData([]);
+                setBranchServicesData([]);
             }
         } catch (error) {
             console.error('Error loading services data:', error);
         } finally {
             setServicesLoading(false);
         }
-    }, [sucursalId, rol]);
+    }, [appNegocioId, isOwner, sucursalId, selectedBranchId]);
 
-    useEffect(() => {
-        loadRevenueData();
-    }, [loadRevenueData]);
-
-    // Services load once on mount (all-time)
-    useEffect(() => {
-        loadServicesData();
-    }, [loadServicesData]);
+    useEffect(() => { loadRevenueData(); }, [loadRevenueData]);
+    useEffect(() => { loadServicesData(); }, [loadServicesData]);
 
     const getDateRange = (date: Date, mode: string) => {
         const d = new Date(date);
         if (mode === 'day') {
-            d.setHours(0, 0, 0, 0);
-            const start = d.toISOString();
-            d.setHours(23, 59, 59, 999);
-            return { startDate: start, endDate: d.toISOString() };
+            d.setHours(0, 0, 0, 0); const start = d.toISOString();
+            d.setHours(23, 59, 59, 999); return { startDate: start, endDate: d.toISOString() };
         } else if (mode === 'week') {
             const day = d.getDay();
             const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-            d.setDate(diff);
-            d.setHours(0, 0, 0, 0);
-            const start = d.toISOString();
-            d.setDate(d.getDate() + 6);
-            d.setHours(23, 59, 59, 999);
-            return { startDate: start, endDate: d.toISOString() };
+            d.setDate(diff); d.setHours(0, 0, 0, 0); const start = d.toISOString();
+            d.setDate(d.getDate() + 6); d.setHours(23, 59, 59, 999); return { startDate: start, endDate: d.toISOString() };
         } else {
-            d.setDate(1);
-            d.setHours(0, 0, 0, 0);
-            const start = d.toISOString();
-            d.setMonth(d.getMonth() + 1);
-            d.setDate(0);
-            d.setHours(23, 59, 59, 999);
-            return { startDate: start, endDate: d.toISOString() };
+            d.setDate(1); d.setHours(0, 0, 0, 0); const start = d.toISOString();
+            d.setMonth(d.getMonth() + 1); d.setDate(0); d.setHours(23, 59, 59, 999); return { startDate: start, endDate: d.toISOString() };
         }
     };
 
@@ -204,7 +252,7 @@ export default function EstadisticasScreen() {
             if (cita.fecha_completado) {
                 const hour = new Date(cita.fecha_completado).getHours();
                 const key = `${hour}:00`;
-                if (hours[key] !== undefined) hours[key] += cita.total_pagado || 0;
+                if (hours[key] !== undefined) hours[key] += (cita.total_pagado || cita.monto_total || 0);
             }
         });
         return Object.entries(hours).map(([name, value]) => ({ name, value }));
@@ -217,7 +265,7 @@ export default function EstadisticasScreen() {
         citas.forEach(cita => {
             if (cita.fecha_completado) {
                 const dayIndex = (new Date(cita.fecha_completado).getDay() + 6) % 7;
-                dayData[days[dayIndex]] += cita.total_pagado || 0;
+                dayData[days[dayIndex]] += (cita.total_pagado || cita.monto_total || 0);
             }
         });
         return days.map(name => ({ name, value: dayData[name] }));
@@ -230,7 +278,7 @@ export default function EstadisticasScreen() {
         citas.forEach(cita => {
             if (cita.fecha_completado) {
                 const day = new Date(cita.fecha_completado).getDate().toString();
-                if (dayData[day] !== undefined) dayData[day] += cita.total_pagado || 0;
+                if (dayData[day] !== undefined) dayData[day] += (cita.total_pagado || cita.monto_total || 0);
             }
         });
         return Object.entries(dayData).map(([name, value]) => ({ name, value }));
@@ -253,295 +301,430 @@ export default function EstadisticasScreen() {
         return currentDate.toLocaleDateString('es-MX', { month: 'long', year: 'numeric' });
     };
 
-    const maxValue = Math.max(...revenueData.map(d => d.value), 100);
-    const totalServices = servicesData.reduce((sum, s) => sum + s.count, 0);
+    const maxValueCitas = Math.max(...(citasPorSucursalData.length ? citasPorSucursalData.map(d => d.value) : [10]), 10); // Base Y Axis for citas
+    const maxValueRevenue = Math.max(...(revenueData.length ? revenueData.map(d => d.value) : [100]), 100);
+    const totalGlobalServices = globalServicesData.reduce((sum, s) => sum + s.count, 0);
 
-    if (rol !== 'sucursal') {
-        return (
-            <KyrosScreen title="Estadísticas">
-                <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-                    <MaterialIcons name="lock-clock" size={64} color={theme.colors.primary} />
-                    <Text variant="titleMedium" style={{ marginTop: 16 }}>Solo visible para Sucursales (MVP)</Text>
-                </View>
-            </KyrosScreen>
-        );
-    }
-
-    // ──────────────────────────────────────────────
-    // Compact Revenue Chart (for inline card)
-    // ──────────────────────────────────────────────
-    const renderRevenueChart = (fullscreen = false) => {
-        const chartHeight = fullscreen ? 300 : 220;
-        const barWidth = fullscreen ? 50 : 40;
-
-        return (
-            <>
-                {/* Pill Mode Selector */}
-                <View style={styles.pillContainer}>
-                    {(['day', 'week', 'month'] as const).map((mode) => (
-                        <TouchableOpacity
-                            key={mode}
-                            onPress={() => { setViewMode(mode); setCurrentDate(new Date()); }}
-                            style={[styles.pillBtn, viewMode === mode ? { backgroundColor: '#2A4384' } : { backgroundColor: '#212A40' }]}
-                        >
-                            {viewMode === mode && <MaterialIcons name="check" size={14} color="#A6C8FF" style={{ marginRight: 4 }} />}
-                            <Text style={{ color: viewMode === mode ? '#A6C8FF' : '#9AA6B8', fontWeight: viewMode === mode ? 'bold' : 'normal' }}>
-                                {mode === 'day' ? 'Día' : mode === 'week' ? 'Semana' : 'Mes'}
-                            </Text>
-                        </TouchableOpacity>
-                    ))}
-                </View>
-
-                {/* Date Navigation */}
-                <View style={styles.navContainer}>
-                    <TouchableOpacity onPress={() => navigatePeriod('prev')} style={styles.iconBtn}>
-                        <MaterialIcons name="chevron-left" size={28} color="#fff" />
-                    </TouchableOpacity>
-                    <Text style={[styles.dateLabel, { color: '#fff' }]}>{formatPeriodLabel()}</Text>
-                    <TouchableOpacity onPress={() => navigatePeriod('next')} style={styles.iconBtn}>
-                        <MaterialIcons name="chevron-right" size={28} color="#fff" />
-                    </TouchableOpacity>
-                </View>
-
-                {/* Total Badge */}
-                <View style={styles.totalBadge}>
-                    <Text style={styles.totalBadgeText}>Total: <Text style={{ fontWeight: 'bold' }}>${revenueTotal.toFixed(2)}</Text></Text>
-                </View>
-
-                {loading ? (
-                    <ActivityIndicator size="large" color={theme.colors.primary} style={{ marginVertical: 40 }} />
-                ) : revenueTotal === 0 ? (
-                    <View style={styles.emptyContainer}>
-                        <MaterialIcons name="trending-up" size={48} color="#aaa" />
-                        <Text style={[styles.emptyTitle, { color: '#fff' }]}>No hay ingresos registrados para este período</Text>
-                        <Text style={styles.emptySubtitle}>Los ingresos se registran al marcar citas como completadas</Text>
-                    </View>
-                ) : (
-                    <View style={[styles.chartWrapper, { height: chartHeight }]}>
-                        {/* Y-Axis */}
-                        <View style={styles.yAxis}>
-                            <Text style={[styles.yAxisLabel, { transform: [{ rotate: '-90deg' }], left: -26, top: chartHeight / 2 - 20, position: 'absolute' }]}>Ingresos ($)</Text>
-                            {[maxValue, maxValue * 0.75, maxValue * 0.5, maxValue * 0.25, 0].map((val, i) => (
-                                <Text key={i} style={styles.yAxisText}>{Math.round(val)}</Text>
-                            ))}
-                        </View>
-
-                        <View style={styles.chartContainer}>
-                            {/* Grid Lines */}
-                            <View style={styles.gridLines}>
-                                {[1, 2, 3, 4].map(line => (
-                                    <View key={line} style={styles.gridLine} />
-                                ))}
-                            </View>
-
-                            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chartScroll}>
-                                {revenueData.map((data, index) => {
-                                    const heightPercentage = Math.max((data.value / maxValue) * 100, 2);
-                                    return (
-                                        <View key={index} style={[styles.barWrapper, { width: fullscreen ? 70 : 60 }]}>
-                                            <View style={styles.barSpace}>
-                                                <View style={[styles.bar, { height: `${heightPercentage}%`, width: barWidth }]} />
-                                            </View>
-                                            <Text style={styles.barLabel}>{data.name}</Text>
-                                        </View>
-                                    );
-                                })}
-                            </ScrollView>
-                        </View>
-                    </View>
-                )}
-            </>
-        );
-    };
+    const isTabletOrWeb = screenWidth > 768;
 
     return (
         <KyrosScreen title="Estadísticas">
-            <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40 }}>
+            <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40, paddingHorizontal: 12 }}>
 
-                {/* ═══════════ Ingresos Card ═══════════ */}
-                <TouchableOpacity activeOpacity={0.8} onPress={() => setRevenueModalVisible(true)}>
-                    <KyrosCard style={styles.cardWrapper}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
-                            <MaterialIcons name="attach-money" size={22} color="#0F9D58" />
-                            <Text variant="titleMedium" style={{ fontWeight: 'bold', color: theme.colors.onSurface, marginLeft: 4 }}>Ingresos</Text>
-                            <View style={{ flex: 1 }} />
-                            <MaterialIcons name="fullscreen" size={22} color={theme.colors.onSurfaceVariant} />
-                        </View>
-                        {renderRevenueChart(false)}
-                    </KyrosCard>
-                </TouchableOpacity>
+                {/* Date Controls (Applies to Revenue & Citas) */}
+                <View style={{ marginTop: 20, marginBottom: 10, alignSelf: 'center', width: '100%', maxWidth: 600 }}>
+                    <View style={styles.pillContainer}>
+                        {(['day', 'week', 'month'] as const).map((mode) => (
+                            <TouchableOpacity key={mode} onPress={() => { setViewMode(mode); setCurrentDate(new Date()); }}
+                                style={[styles.pillBtn, viewMode === mode ? { backgroundColor: '#2A4384' } : { backgroundColor: '#212A40' }]}>
+                                {viewMode === mode && <MaterialIcons name="check" size={14} color="#A6C8FF" style={{ marginRight: 4 }} />}
+                                <Text style={{ color: viewMode === mode ? '#A6C8FF' : '#9AA6B8', fontWeight: viewMode === mode ? 'bold' : 'normal' }}>
+                                    {mode === 'day' ? 'Día' : mode === 'week' ? 'Semana' : 'Mes'}
+                                </Text>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                    <View style={styles.navContainer}>
+                        <TouchableOpacity onPress={() => navigatePeriod('prev')} style={styles.iconBtn}>
+                            <MaterialIcons name="chevron-left" size={28} color="#fff" />
+                        </TouchableOpacity>
+                        <Text style={[styles.dateLabel, { color: '#fff' }]}>{formatPeriodLabel()}</Text>
+                        <TouchableOpacity onPress={() => navigatePeriod('next')} style={styles.iconBtn}>
+                            <MaterialIcons name="chevron-right" size={28} color="#fff" />
+                        </TouchableOpacity>
+                    </View>
+                </View>
 
-                {/* ═══════════ Servicios Más Elegidos Card ═══════════ */}
-                <TouchableOpacity activeOpacity={0.8} onPress={() => setDonutModalVisible(true)}>
-                    <KyrosCard style={styles.cardWrapper}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
-                            <Text variant="titleMedium" style={{ fontWeight: 'bold', color: theme.colors.onSurface }}>Servicios Más Elegidos</Text>
-                            <View style={{ flex: 1 }} />
-                            <MaterialIcons name="fullscreen" size={22} color={theme.colors.onSurfaceVariant} />
-                        </View>
-
-                        {servicesLoading ? (
-                            <ActivityIndicator style={{ marginVertical: 30 }} />
-                        ) : servicesData.length === 0 ? (
-                            <Text style={{ textAlign: 'center', color: '#888', marginVertical: 30 }}>Sin datos de servicios</Text>
-                        ) : (
-                            <View style={{ alignItems: 'center' }}>
-                                {/* Donut with center text */}
-                                <View style={{ position: 'relative', width: 180, height: 180, alignItems: 'center', justifyContent: 'center', marginVertical: 16 }}>
-                                    <DonutChart data={servicesData} size={180} />
-                                    <View style={{ position: 'absolute', alignItems: 'center' }}>
-                                        <Text style={{ color: '#94a3b8', fontSize: 12 }}>Total</Text>
-                                        <Text style={{ color: '#fff', fontSize: 24, fontWeight: 'bold' }}>{totalServices}</Text>
+                {isOwner ? (
+                    <View style={isTabletOrWeb ? styles.rowFlow : styles.colFlow}>
+                        {/* ═══════════ Ingresos Estimados (Owner Only) ═══════════ */}
+                        <KyrosCard style={styles.fullWidth}>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                                <Text variant="titleMedium" style={[styles.cardTitle, { marginBottom: 0 }]}>Ingresos Estimados</Text>
+                                <TouchableOpacity onPress={() => setFullScreenChart('revenue')} style={{ padding: 4, backgroundColor: '#334155', borderRadius: 8 }}>
+                                    <MaterialIcons name="fullscreen" size={24} color="#e2e8f0" />
+                                </TouchableOpacity>
+                            </View>
+                            
+                            <View style={{ marginBottom: 16 }}>
+                                <KyrosSelector
+                                    options={[
+                                        { label: 'Global (Todas las sucursales)', value: null },
+                                        ...sucursales.map(s => ({ label: s.nombre, value: s.id }))
+                                    ]}
+                                    selectedValue={revenueBranchId}
+                                    onValueChange={(val) => setRevenueBranchId(val)}
+                                    icon="store"
+                                    style={{ backgroundColor: '#1E293B', borderColor: '#334155' }}
+                                />
+                            </View>
+                            {loading ? (
+                                <ActivityIndicator style={{ marginVertical: 30 }} color="#1E66FF" />
+                            ) : (
+                                <View style={styles.chartWrapper}>
+                                    <View style={styles.yAxis}>
+                                        <Text style={[styles.yAxisLabel, { transform: [{ rotate: '-90deg' }], left: -40, top: 80, position: 'absolute' }]}>Ingreso ($)</Text>
+                                        {[maxValueRevenue, maxValueRevenue * 0.5, 0].map((val, i) => (
+                                            <Text key={i} style={styles.yAxisText}>${Math.round(val)}</Text>
+                                        ))}
+                                    </View>
+                                    <View style={styles.chartContainer}>
+                                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chartScroll}>
+                                            {revenueData.map((data, index) => {
+                                                const heightPercentage = Math.max((data.value / maxValueRevenue) * 100, 2);
+                                                return (
+                                                    <View key={index} style={styles.barWrapper}>
+                                                        <View style={styles.barSpace}>
+                                                            <Text style={{ color: '#fff', fontSize: 10, marginBottom: 4 }}>${data.value}</Text>
+                                                            <View style={[styles.bar, { height: `${heightPercentage}%`, backgroundColor: '#10b981' }]} />
+                                                        </View>
+                                                        <Text style={styles.barLabel}>{data.name}</Text>
+                                                    </View>
+                                                );
+                                            })}
+                                        </ScrollView>
                                     </View>
                                 </View>
-
-                                {/* Legend below donut */}
-                                <View style={{ width: '100%', marginTop: 12 }}>
-                                    {servicesData.map((item, idx) => (
-                                        <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 8, borderBottomWidth: idx < servicesData.length - 1 ? 1 : 0, borderBottomColor: '#1e293b' }}>
-                                            <View style={[styles.legendColorBox, { backgroundColor: item.color }]} />
-                                            <Text numberOfLines={1} style={{ color: '#e2e8f0', fontSize: 14, flex: 1 }}>
-                                                {item.name}
-                                            </Text>
-                                            <Text style={{ color: '#94a3b8', fontSize: 13, marginLeft: 8 }}>
-                                                {item.count} ({totalServices > 0 ? Math.round((item.count / totalServices) * 100) : 0}%)
-                                            </Text>
-                                        </View>
-                                    ))}
-                                </View>
+                            )}
+                            <View style={{ alignItems: 'center', marginTop: 10, marginBottom: 10 }}>
+                                <Text style={{ color: '#10b981', fontSize: 24, fontWeight: 'bold' }}>Total Generado: ${revenueTotal}</Text>
                             </View>
-                        )}
-                    </KyrosCard>
-                </TouchableOpacity>
+                        </KyrosCard>
 
+                        {/* ═══════════ Citas por Sucursal (Owner Only) ═══════════ */}
+                        <KyrosCard style={isTabletOrWeb ? styles.halfWidth : styles.fullWidth}>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                                <Text variant="titleMedium" style={[styles.cardTitle, { marginBottom: 0 }]}>Citas por Sucursal</Text>
+                                <TouchableOpacity onPress={() => setFullScreenChart('citas')} style={{ padding: 4, backgroundColor: '#334155', borderRadius: 8 }}>
+                                    <MaterialIcons name="fullscreen" size={24} color="#e2e8f0" />
+                                </TouchableOpacity>
+                            </View>
+                            {loading ? (
+                                <ActivityIndicator style={{ marginVertical: 30 }} />
+                            ) : (
+                                <View style={styles.chartWrapper}>
+                                    <View style={styles.yAxis}>
+                                        <Text style={[styles.yAxisLabel, { transform: [{ rotate: '-90deg' }], left: -30, top: 80, position: 'absolute' }]}>Citas</Text>
+                                        {[maxValueCitas, maxValueCitas * 0.5, 0].map((val, i) => (
+                                            <Text key={i} style={styles.yAxisText}>{Math.round(val)}</Text>
+                                        ))}
+                                    </View>
+                                    <View style={styles.chartContainer}>
+                                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chartScroll}>
+                                            {citasPorSucursalData.map((data, index) => {
+                                                const heightPercentage = Math.max((data.value / maxValueCitas) * 100, 2);
+                                                return (
+                                                    <View key={index} style={styles.barWrapper}>
+                                                        <View style={styles.barSpace}>
+                                                            <Text style={{ color: '#fff', fontSize: 10, marginBottom: 4 }}>{data.value}</Text>
+                                                            <View style={[styles.bar, { height: `${heightPercentage}%`, backgroundColor: '#3b82f6' }]} />
+                                                        </View>
+                                                        <Text style={styles.barLabel}>{data.name}</Text>
+                                                    </View>
+                                                );
+                                            })}
+                                        </ScrollView>
+                                    </View>
+                                </View>
+                            )}
+                        </KyrosCard>
+
+                        {/* ═══════════ Servicios Más Elegidos (General) (Owner Only) ═══════════ */}
+                        <KyrosCard style={isTabletOrWeb ? styles.halfWidth : styles.fullWidth}>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                                <Text variant="titleMedium" style={[styles.cardTitle, { marginBottom: 0 }]}>Servicios Más Elegidos (General)</Text>
+                                <TouchableOpacity onPress={() => setFullScreenChart('globalServices')} style={{ padding: 4, backgroundColor: '#334155', borderRadius: 8 }}>
+                                    <MaterialIcons name="fullscreen" size={24} color="#e2e8f0" />
+                                </TouchableOpacity>
+                            </View>
+                            {servicesLoading ? (
+                                <ActivityIndicator style={{ marginVertical: 30 }} />
+                            ) : (
+                                <View style={styles.donutRowLayout}>
+                                    <View style={styles.donutContainer}>
+                                        <DonutChart data={globalServicesData} size={150} />
+                                    </View>
+                                    <View style={styles.legendContainerFlex}>
+                                        <Text style={{ color: '#fff', fontWeight: 'bold', marginBottom: 8 }}>Servicios</Text>
+                                        {globalServicesData.map((item, idx) => {
+                                            const pct = totalGlobalServices > 0 ? Math.round((item.count / totalGlobalServices) * 100) : 0;
+                                            return (
+                                                <View key={idx} style={styles.legendRow}>
+                                                    <View style={[styles.legendColorBox, { backgroundColor: item.color }]} />
+                                                    <Text numberOfLines={1} style={styles.legendText}>
+                                                        {item.name} ({pct}%)
+                                                    </Text>
+                                                </View>
+                                            );
+                                        })}
+                                    </View>
+                                </View>
+                            )}
+                        </KyrosCard>
+
+                        {/* ═══════════ Servicios por Sucursal (Owner Only) ═══════════ */}
+                        <KyrosCard style={styles.fullWidth}>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                                <Text variant="titleMedium" style={[styles.cardTitle, { marginBottom: 0 }]}>Servicios por Sucursal</Text>
+                                <TouchableOpacity onPress={() => setFullScreenChart('branchServices')} style={{ padding: 4, backgroundColor: '#334155', borderRadius: 8 }}>
+                                    <MaterialIcons name="fullscreen" size={24} color="#e2e8f0" />
+                                </TouchableOpacity>
+                            </View>
+                            <View style={{ marginBottom: 16 }}>
+                                <KyrosSelector
+                                    options={[
+                                        { label: 'Seleccionar Sucursal...', value: null },
+                                        ...sucursales.map(s => ({ label: s.nombre, value: s.id }))
+                                    ]}
+                                    selectedValue={selectedBranchId}
+                                    onValueChange={(val) => setSelectedBranchId(val)}
+                                    icon="store"
+                                    style={{ backgroundColor: '#1E293B', borderColor: '#334155' }}
+                                />
+                            </View>
+
+                            {servicesLoading ? (
+                                <ActivityIndicator style={{ marginVertical: 30 }} />
+                            ) : !selectedBranchId ? (
+                                <Text style={styles.emptyText}>Selecciona una sucursal para ver sus analíticas.</Text>
+                            ) : (
+                                <View style={{ flexDirection: 'column', gap: 12, marginTop: 10 }}>
+                                    {branchServicesData.map((item, idx) => {
+                                        const maxBCount = Math.max(...(branchServicesData.length ? branchServicesData.map(d => d.count) : [1]), 1);
+                                        const wPct = (item.count / maxBCount) * 100;
+                                        return (
+                                            <View key={idx} style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                                <Text style={{ width: 100, color: '#94a3b8', fontSize: 11, marginRight: 8 }} numberOfLines={1}>{item.name}</Text>
+                                                <View style={{ flex: 1, height: 16, backgroundColor: '#1E293B', borderRadius: 4, overflow: 'hidden' }}>
+                                                    <View style={{ width: `${Math.max(wPct, 2)}%`, height: '100%', backgroundColor: item.color, borderRadius: 4 }} />
+                                                </View>
+                                                <Text style={{ width: 20, color: '#fff', fontSize: 11, marginLeft: 8, textAlign: 'right' }}>{item.count}</Text>
+                                            </View>
+                                        );
+                                    })}
+                                    {branchServicesData.length === 0 && <Text style={styles.emptyText}>Sin registros</Text>}
+                                </View>
+                            )}
+                        </KyrosCard>
+                    </View>
+                ) : (
+                    <View style={styles.colFlow}>
+                        {/* ═══════════ Servicios Más Elegidos (Branch Only) ═══════════ */}
+                        <KyrosCard style={styles.fullWidth}>
+                            <Text variant="titleMedium" style={styles.cardTitle}>Servicios Más Elegidos</Text>
+                            {servicesLoading ? (
+                                <ActivityIndicator style={{ marginVertical: 30 }} />
+                            ) : globalServicesData.length === 0 ? (
+                                <Text style={styles.emptyText}>Sin datos de servicios</Text>
+                            ) : (
+                                <View style={styles.donutRowLayout}>
+                                    <View style={styles.donutContainer}>
+                                        <DonutChart data={globalServicesData} size={150} />
+                                    </View>
+                                    <View style={styles.legendContainerFlex}>
+                                        <Text style={{ color: '#fff', fontWeight: 'bold', marginBottom: 8 }}>Servicios</Text>
+                                        {globalServicesData.map((item, idx) => {
+                                            const pct = totalGlobalServices > 0 ? Math.round((item.count / totalGlobalServices) * 100) : 0;
+                                            return (
+                                                <View key={idx} style={styles.legendRow}>
+                                                    <View style={[styles.legendColorBox, { backgroundColor: item.color }]} />
+                                                    <Text numberOfLines={1} style={styles.legendText}>
+                                                        {item.name} ({pct}%)
+                                                    </Text>
+                                                </View>
+                                            );
+                                        })}
+                                    </View>
+                                </View>
+                            )}
+                        </KyrosCard>
+                    </View>
+                )}
             </ScrollView>
 
-            {/* ═══════════════════════════════════════════
-                FULLSCREEN MODAL: Servicios Más Elegidos
-                ═══════════════════════════════════════════ */}
-            <RNModal
-                visible={donutModalVisible}
-                animationType="slide"
-                transparent={false}
-                onRequestClose={() => setDonutModalVisible(false)}
-            >
-                <View style={styles.fullscreenModal}>
-                    {/* Close Button */}
-                    <TouchableOpacity style={styles.closeBtn} onPress={() => setDonutModalVisible(false)}>
-                        <MaterialIcons name="close" size={28} color="#fff" />
-                    </TouchableOpacity>
-
-                    <Text style={styles.fullscreenTitle}>Servicios Más Elegidos</Text>
-
-                    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, paddingHorizontal: 16 }}>
-                        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                            <View style={{ position: 'relative', alignItems: 'center', justifyContent: 'center' }}>
-                                <DonutChart data={servicesData} size={Math.min(screenWidth * 0.55, 280)} />
-                                <View style={{ position: 'absolute', alignItems: 'center' }}>
-                                    <Text style={{ color: '#94a3b8', fontSize: 14 }}>Total</Text>
-                                    <Text style={{ color: '#fff', fontSize: 32, fontWeight: 'bold' }}>{totalServices}</Text>
-                                </View>
-                            </View>
-                        </View>
-
-                        <ScrollView style={{ width: 160, maxHeight: 400 }} showsVerticalScrollIndicator={false}>
-                            <Text style={{ fontWeight: 'bold', marginBottom: 16, color: '#fff', fontSize: 16 }}>Servicios</Text>
-                            {servicesData.map((item, idx) => (
-                                <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
-                                    <View style={{ width: 16, height: 16, borderRadius: 4, backgroundColor: item.color, marginRight: 10 }} />
-                                    <View style={{ flex: 1 }}>
-                                        <Text style={{ color: '#fff', fontSize: 14 }}>{item.name}</Text>
-                                        <Text style={{ color: '#94a3b8', fontSize: 12 }}>{item.count} ({totalServices > 0 ? Math.round((item.count / totalServices) * 100) : 0}%)</Text>
+            <RNModal visible={fullScreenChart !== null} animationType="slide" onRequestClose={() => setFullScreenChart(null)}>
+                <View style={{ flex: 1, backgroundColor: '#0F172A', padding: 20 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 20 }}>
+                        <TouchableOpacity onPress={() => setFullScreenChart(null)} style={{ padding: 8, backgroundColor: '#334155', borderRadius: 8 }}>
+                            <MaterialIcons name="close" size={24} color="#e2e8f0" />
+                        </TouchableOpacity>
+                    </View>
+                    <View style={{ flex: 1, justifyContent: 'center' }}>
+                        {fullScreenChart === 'revenue' && (
+                            <KyrosCard style={{ flex: 1 }}>
+                                <Text variant="titleLarge" style={[styles.cardTitle, { textAlign: 'center' }]}>Ingresos Estimados</Text>
+                                {revenueData.length === 0 && !loading ? (
+                                    <Text style={styles.emptyText}>Sin ingresos para este período</Text>
+                                ) : (
+                                    <View style={[styles.chartWrapper, { height: '80%' }]}>
+                                        <View style={styles.yAxis}>
+                                            <Text style={[styles.yAxisLabel, { transform: [{ rotate: '-90deg' }], left: -40, top: 150, position: 'absolute' }]}>Ingreso ($)</Text>
+                                            {[maxValueRevenue, maxValueRevenue * 0.5, 0].map((val, i) => (
+                                                <Text key={i} style={styles.yAxisText}>${Math.round(val)}</Text>
+                                            ))}
+                                        </View>
+                                        <View style={styles.chartContainer}>
+                                            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chartScroll}>
+                                                {revenueData.map((data, index) => {
+                                                    const heightPercentage = Math.max((data.value / maxValueRevenue) * 100, 2);
+                                                    return (
+                                                        <View key={index} style={styles.barWrapper}>
+                                                            <View style={styles.barSpace}>
+                                                                <Text style={{ color: '#fff', fontSize: 12, marginBottom: 4 }}>${data.value}</Text>
+                                                                <View style={[styles.bar, { height: `${heightPercentage}%`, backgroundColor: '#10b981' }]} />
+                                                            </View>
+                                                            <Text style={styles.barLabel}>{data.name}</Text>
+                                                        </View>
+                                                    );
+                                                })}
+                                            </ScrollView>
+                                        </View>
+                                    </View>
+                                )}
+                            </KyrosCard>
+                        )}
+                        {fullScreenChart === 'citas' && (
+                            <KyrosCard style={{ flex: 1 }}>
+                                <Text variant="titleLarge" style={[styles.cardTitle, { textAlign: 'center' }]}>Citas por Sucursal</Text>
+                                {citasPorSucursalData.length === 0 && !loading ? (
+                                    <Text style={styles.emptyText}>Sin datos para este período</Text>
+                                ) : (
+                                    <View style={[styles.chartWrapper, { height: '80%' }]}>
+                                        <View style={styles.yAxis}>
+                                            <Text style={[styles.yAxisLabel, { transform: [{ rotate: '-90deg' }], left: -30, top: 150, position: 'absolute' }]}>Citas</Text>
+                                            {[maxValueCitas, maxValueCitas * 0.5, 0].map((val, i) => (
+                                                <Text key={i} style={styles.yAxisText}>{Math.round(val)}</Text>
+                                            ))}
+                                        </View>
+                                        <View style={styles.chartContainer}>
+                                            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chartScroll}>
+                                                {citasPorSucursalData.map((data, index) => {
+                                                    const heightPercentage = Math.max((data.value / maxValueCitas) * 100, 2);
+                                                    return (
+                                                        <View key={index} style={styles.barWrapper}>
+                                                            <View style={styles.barSpace}>
+                                                                <Text style={{ color: '#fff', fontSize: 12, marginBottom: 4 }}>{data.value}</Text>
+                                                                <View style={[styles.bar, { height: `${heightPercentage}%`, backgroundColor: '#3b82f6' }]} />
+                                                            </View>
+                                                            <Text style={styles.barLabel}>{data.name}</Text>
+                                                        </View>
+                                                    );
+                                                })}
+                                            </ScrollView>
+                                        </View>
+                                    </View>
+                                )}
+                            </KyrosCard>
+                        )}
+                        {/* Servicios Más Elegidos (Global) */}
+                        {fullScreenChart === 'globalServices' && (
+                            <KyrosCard style={{ flex: 1 }}>
+                                <Text variant="titleLarge" style={[styles.cardTitle, { textAlign: 'center', marginBottom: 40 }]}>
+                                    Servicios Más Elegidos (General)
+                                </Text>
+                                <View style={[styles.donutRowLayout, { flexDirection: 'column', gap: 40 }]}>
+                                    <View style={styles.donutContainer}>
+                                        <DonutChart data={globalServicesData} size={250} />
+                                    </View>
+                                    <View style={[styles.legendContainerFlex, { width: '100%', alignItems: 'center' }]}>
+                                        <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 18, marginBottom: 16 }}>Servicios</Text>
+                                        {globalServicesData.map((item, idx) => {
+                                            const pct = totalGlobalServices > 0 ? Math.round((item.count / totalGlobalServices) * 100) : 0;
+                                            return (
+                                                <View key={idx} style={[styles.legendRow, { marginBottom: 12, justifyContent: 'flex-start', width: 250 }]}>
+                                                    <View style={[styles.legendColorBox, { backgroundColor: item.color, width: 20, height: 20, marginRight: 12 }]} />
+                                                    <Text style={[styles.legendText, { fontSize: 16 }]}>
+                                                        {item.name} ({pct}%) • {item.count} citas
+                                                    </Text>
+                                                </View>
+                                            );
+                                        })}
                                     </View>
                                 </View>
-                            ))}
-                        </ScrollView>
+                            </KyrosCard>
+                        )}
+                        {/* Servicios por Sucursal */}
+                        {fullScreenChart === 'branchServices' && (
+                            <KyrosCard style={{ flex: 1 }}>
+                                <Text variant="titleLarge" style={[styles.cardTitle, { textAlign: 'center', marginBottom: 30 }]}>
+                                    Servicios por Sucursal
+                                </Text>
+                                <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}>
+                                    <View style={{ flexDirection: 'column', gap: 20 }}>
+                                        {branchServicesData.map((item, idx) => {
+                                            const maxBCount = Math.max(...(branchServicesData.length ? branchServicesData.map(d => d.count) : [1]), 1);
+                                            const wPct = (item.count / maxBCount) * 100;
+                                            return (
+                                                <View key={idx} style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                                    <Text style={{ width: 140, color: '#94a3b8', fontSize: 14, marginRight: 12 }} numberOfLines={2}>{item.name}</Text>
+                                                    <View style={{ flex: 1, height: 24, backgroundColor: '#1E293B', borderRadius: 6, overflow: 'hidden' }}>
+                                                        <View style={{ width: `${Math.max(wPct, 2)}%`, height: '100%', backgroundColor: item.color, borderRadius: 6 }} />
+                                                    </View>
+                                                    <Text style={{ width: 40, color: '#fff', fontSize: 14, marginLeft: 12, textAlign: 'right', fontWeight: 'bold' }}>{item.count}</Text>
+                                                </View>
+                                            );
+                                        })}
+                                        {branchServicesData.length === 0 && <Text style={[styles.emptyText, { marginTop: 40 }]}>No hay datos</Text>}
+                                    </View>
+                                </ScrollView>
+                            </KyrosCard>
+                        )}
                     </View>
                 </View>
             </RNModal>
-
-            {/* ═══════════════════════════════════════════
-                FULLSCREEN MODAL: Ingresos
-                ═══════════════════════════════════════════ */}
-            <RNModal
-                visible={revenueModalVisible}
-                animationType="slide"
-                transparent={false}
-                onRequestClose={() => setRevenueModalVisible(false)}
-            >
-                <View style={styles.fullscreenModal}>
-                    {/* Close Button */}
-                    <TouchableOpacity style={styles.closeBtn} onPress={() => setRevenueModalVisible(false)}>
-                        <MaterialIcons name="close" size={28} color="#fff" />
-                    </TouchableOpacity>
-
-                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8, paddingHorizontal: 20 }}>
-                        <MaterialIcons name="attach-money" size={24} color="#0F9D58" />
-                        <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#fff', marginLeft: 6 }}>Ingresos</Text>
-                    </View>
-
-                    <ScrollView contentContainerStyle={{ padding: 16 }}>
-                        {renderRevenueChart(true)}
-                    </ScrollView>
-                </View>
-            </RNModal>
-
         </KyrosScreen>
     );
 }
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
-    cardWrapper: { marginHorizontal: 12, marginTop: 16 },
-    pillContainer: { flexDirection: 'row', justifyContent: 'center', alignSelf: 'center', borderRadius: 24, padding: 4, marginBottom: 20, backgroundColor: '#1A233A' },
-    pillBtn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, paddingVertical: 8, borderRadius: 20 },
-    navContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
-    iconBtn: { padding: 8 },
-    dateLabel: { fontSize: 15, fontWeight: 'bold', width: 240, textAlign: 'center', textTransform: 'capitalize' },
-    totalBadge: {
-        backgroundColor: '#0F9D58', alignSelf: 'center', paddingVertical: 10, paddingHorizontal: 24,
-        borderRadius: 12, marginBottom: 30
-    },
-    totalBadgeText: { color: '#fff', fontSize: 20 },
-    chartWrapper: { flexDirection: 'row', marginTop: 10 },
-    yAxis: { width: 40, justifyContent: 'space-between', paddingBottom: 30, alignItems: 'flex-end', paddingRight: 8 },
+    rowFlow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 16 },
+    colFlow: { flexDirection: 'column', gap: 16 },
+    fullWidth: { flexBasis: '100%', marginBottom: 16 },
+    halfWidth: { flexBasis: '48%', marginBottom: 16 },
+    cardTitle: { fontWeight: 'bold', color: '#fff', marginBottom: 16 },
+    
+    // Revenue specific (now adapted for citas)
+    chartWrapper: { flexDirection: 'row', height: 220, marginTop: 10 },
+    yAxis: { width: 50, justifyContent: 'space-between', paddingBottom: 30, alignItems: 'flex-end', paddingRight: 8 },
     yAxisText: { fontSize: 10, color: '#94a3b8' },
-    yAxisLabel: { fontSize: 12, width: 80, textAlign: 'center', color: '#94a3b8' },
+    yAxisLabel: { fontSize: 12, color: '#94a3b8', width: 60, textAlign: 'center' },
     chartContainer: { flex: 1, borderBottomWidth: 1, borderLeftWidth: 1, borderColor: '#334155' },
-    gridLines: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 30, justifyContent: 'space-between' },
-    gridLine: { borderTopWidth: 1, width: '100%', opacity: 0.15, borderColor: '#475569' },
-    chartScroll: { alignItems: 'flex-end', paddingRight: 20, minWidth: '100%' },
-    barWrapper: { width: 60, alignItems: 'center', height: '100%', justifyContent: 'flex-end' },
+    chartScroll: { alignItems: 'flex-end', paddingRight: 20, minWidth: '100%', paddingLeft: 10 },
+    barWrapper: { width: 80, alignItems: 'center', height: '100%', justifyContent: 'flex-end' },
     barSpace: { flex: 1, width: '100%', justifyContent: 'flex-end', alignItems: 'center' },
-    bar: { width: 40, borderTopLeftRadius: 4, borderTopRightRadius: 4, backgroundColor: '#ec4899' },
+    bar: { width: 40, borderTopLeftRadius: 4, borderTopRightRadius: 4, backgroundColor: '#3b82f6' },
     barLabel: { fontSize: 11, marginTop: 10, color: '#94a3b8', textAlign: 'center' },
-    emptyContainer: { alignItems: 'center', paddingVertical: 40 },
-    emptyTitle: { fontSize: 16, fontWeight: 'bold', marginTop: 16, textAlign: 'center' },
-    emptySubtitle: { fontSize: 14, color: '#888', marginTop: 8, textAlign: 'center' },
-    donutLayout: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8 },
-    donutContainer: { flex: 1, alignItems: 'center', marginVertical: 20 },
-    legendContainer: { width: 130, paddingLeft: 12 },
-    legendItem: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+    
+    emptyText: { textAlign: 'center', color: '#888', marginVertical: 40 },
+    
+    // Donut Layout
+    donutRowLayout: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+    donutContainer: { flex: 1, alignItems: 'center' },
+    legendContainerFlex: { flex: 1, paddingLeft: 16 },
+    legendRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
     legendColorBox: { width: 14, height: 14, borderRadius: 4, marginRight: 8 },
+    legendText: { color: '#e2e8f0', fontSize: 13, flex: 1 },
 
-    // Fullscreen modal
-    fullscreenModal: {
-        flex: 1,
-        backgroundColor: '#0F172A',
-        paddingTop: 50,
-    },
-    closeBtn: {
-        position: 'absolute',
-        top: 50,
-        right: 20,
-        zIndex: 10,
-        padding: 8,
-    },
-    fullscreenTitle: {
-        fontSize: 22,
-        fontWeight: 'bold',
-        color: '#fff',
-        textAlign: 'center',
+    // Picker
+    pickerWrapper: {
+        backgroundColor: '#1E293B',
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#334155',
         marginBottom: 20,
+        overflow: 'hidden'
     },
+    picker: {
+        color: '#e2e8f0',
+        height: 50,
+        width: '100%',
+    },
+
+    // Controls
+    pillContainer: { flexDirection: 'row', justifyContent: 'center', alignSelf: 'center', borderRadius: 24, padding: 4, backgroundColor: '#1A233A' },
+    pillBtn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, paddingVertical: 8, borderRadius: 20 },
+    navContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 10 },
+    iconBtn: { padding: 8 },
+    dateLabel: { fontSize: 15, fontWeight: 'bold', width: 200, textAlign: 'center', textTransform: 'capitalize' },
 });

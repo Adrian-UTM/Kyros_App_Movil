@@ -43,6 +43,10 @@ export default function PerfilScreen() {
     const [timePickerVisible, setTimePickerVisible] = useState(false);
     const [timePickerField, setTimePickerField] = useState<keyof typeof schedule | null>(null);
 
+    // Revenue state for sucursal
+    const [revenueToday, setRevenueToday] = useState(0);
+    const [loadingStats, setLoadingStats] = useState(false);
+
     const weekdays = [1, 2, 3, 4, 5];
     const weekendDays = [6, 0];
     const dayLabels = [
@@ -77,10 +81,38 @@ export default function PerfilScreen() {
     useEffect(() => {
         if (rol === 'sucursal' && sucursalId) {
             loadBranchData();
+            loadRevenueToday();
         } else if (rol === 'dueño' && negocioId) {
             loadBusinessData();
         }
     }, [rol, sucursalId, negocioId]);
+
+    const loadRevenueToday = async () => {
+        if (!sucursalId) return;
+        setLoadingStats(true);
+        try {
+            const now = new Date();
+            const startStr = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+            const endStr = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).toISOString();
+
+            const { data, error } = await supabase
+                .from('citas')
+                .select('total_pagado, monto_total')
+                .eq('sucursal_id', sucursalId)
+                .eq('estado', 'completada')
+                .gte('fecha_completado', startStr)
+                .lte('fecha_completado', endStr);
+
+            if (error) throw error;
+
+            const total = (data || []).reduce((sum, cita) => sum + (cita.total_pagado || cita.monto_total || 0), 0);
+            setRevenueToday(total);
+        } catch (err) {
+            console.error('Error loading revenue today:', err);
+        } finally {
+            setLoadingStats(false);
+        }
+    };
 
     const loadBusinessData = async () => {
         try {
@@ -403,6 +435,32 @@ export default function PerfilScreen() {
                             <KyrosButton mode="outlined" onPress={handleSaveBranch} loading={savingBranch} disabled={savingBranch} style={{ marginTop: 12, alignSelf: 'flex-end', borderColor: theme.colors.outline }}>
                                 Guardar Cambios
                             </KyrosButton>
+                        </KyrosCard>
+
+                        {/* INGRESOS CARD */}
+                        <KyrosCard style={{ marginTop: 16 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                    <View style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', padding: 10, borderRadius: 12, marginRight: 12 }}>
+                                        <MaterialIcons name="payments" size={24} color="#10b981" />
+                                    </View>
+                                    <View>
+                                        <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 13, textTransform: 'uppercase', fontWeight: 'bold' }}>Ingresos de Hoy</Text>
+                                        <Text style={{ color: theme.colors.onSurface, fontSize: 24, fontWeight: 'bold' }}>${revenueToday.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</Text>
+                                    </View>
+                                </View>
+                                <TouchableOpacity 
+                                    onPress={() => loadRevenueToday()} 
+                                    disabled={loadingStats}
+                                    style={{ padding: 8 }}
+                                >
+                                    <MaterialIcons 
+                                        name="refresh" 
+                                        size={20} 
+                                        color={loadingStats ? '#475569' : theme.colors.primary} 
+                                    />
+                                </TouchableOpacity>
+                            </View>
                         </KyrosCard>
                     </View>
                 ) : (

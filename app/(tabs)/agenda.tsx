@@ -1,19 +1,17 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, Platform } from 'react-native';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { View, StyleSheet, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
 import { Text, useTheme, ActivityIndicator } from 'react-native-paper';
-import { Calendar } from 'react-native-calendars';
+import { Calendar, LocaleConfig } from 'react-native-calendars';
 import { MaterialIcons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
-import { Picker } from '@react-native-picker/picker';
 import KyrosScreen from '../../components/KyrosScreen';
-import KyrosCard from '../../components/KyrosCard';
 import KyrosButton from '../../components/KyrosButton';
 import KyrosSelector from '../../components/KyrosSelector';
 import { supabase } from '../../lib/supabaseClient';
 import { useApp } from '../../lib/AppContext';
 import { getLocalToday, formatDateTitle, getStartOfDayLocal, getEndOfDayLocal } from '../../lib/date';
-import { LocaleConfig } from 'react-native-calendars';
 import NetInfo from '@react-native-community/netinfo';
+import { useKyrosPalette } from '../../lib/useKyrosPalette';
 
 // Configurar calendario en español
 LocaleConfig.locales['es'] = {
@@ -78,6 +76,7 @@ const formatTime = (isoString: string): string => {
 export default function AgendaScreen() {
     const { negocioId, sucursalId, rol, isLoading: appLoading } = useApp();
     const theme = useTheme();
+    const palette = useKyrosPalette();
 
     // Estado local
     const [selectedDate, setSelectedDate] = useState(getLocalToday());
@@ -109,9 +108,17 @@ export default function AgendaScreen() {
     };
 
     // Calcular Resumen del Día
-    const totalCitas = citas.length;
-    const citasPendientes = citas.filter(c => c.estado === 'pendiente' || c.estado === 'confirmada').length;
-    const ingresoEstimado = citas.reduce((acc, c) => acc + (c.monto_total || getTotalPrecio(c)), 0);
+    const filteredCitas = useMemo(() => {
+        if (calendarFilter === 'todas') return citas;
+        if (calendarFilter === 'completadas') {
+            return citas.filter(c => c.estado === 'completada');
+        }
+        return citas.filter(c => c.estado !== 'completada' && c.estado !== 'cancelada');
+    }, [citas, calendarFilter]);
+
+    const totalCitas = filteredCitas.length;
+    const citasPendientes = filteredCitas.filter(c => c.estado === 'pendiente' || c.estado === 'confirmada').length;
+    const ingresoEstimado = filteredCitas.reduce((acc, c) => acc + (c.monto_total || getTotalPrecio(c)), 0);
 
     // Inicializar filtro de sucursal según rol
     useEffect(() => {
@@ -240,15 +247,11 @@ export default function AgendaScreen() {
         if (data) {
             const completedDays = new Set<string>();
             const upcomingDays = new Set<string>();
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-
             data.forEach(cita => {
                 if (cita.fecha_hora_inicio) {
                     const dateObj = new Date(cita.fecha_hora_inicio);
                     const localIso = new Date(dateObj.getTime() - dateObj.getTimezoneOffset() * 60000).toISOString();
                     const dateStr = localIso.split('T')[0];
-                    const dayDate = new Date(dateStr + 'T00:00:00');
 
                     if (cita.estado === 'completada') {
                         completedDays.add(dateStr);
@@ -259,22 +262,31 @@ export default function AgendaScreen() {
             });
 
             const marks: any = {};
-            // Apply marks based on filter
             if (calendarFilter === 'todas' || calendarFilter === 'proximas') {
                 upcomingDays.forEach(d => {
-                    marks[d] = { customStyles: { container: {}, text: { color: '#10b981', fontWeight: 'bold' } } };
+                    marks[d] = {
+                        customStyles: {
+                            container: {},
+                            text: { color: palette.infoText, fontWeight: '700' }
+                        }
+                    };
                 });
             }
             if (calendarFilter === 'todas' || calendarFilter === 'completadas') {
                 completedDays.forEach(d => {
                     if (!marks[d]) {
-                        marks[d] = { customStyles: { container: {}, text: { color: '#10b981', fontWeight: 'bold' } } };
+                        marks[d] = {
+                            customStyles: {
+                                container: {},
+                                text: { color: palette.successText, fontWeight: '700' }
+                            }
+                        };
                     }
                 });
             }
             setMonthMarks(marks);
         }
-    }, [negocioId, sucursalId, rol, selectedSucursal, calendarFilter]);
+    }, [negocioId, sucursalId, rol, selectedSucursal, calendarFilter, palette.infoText, palette.successText]);
 
     // Initial load when current context is established
     useEffect(() => {
@@ -300,25 +312,19 @@ export default function AgendaScreen() {
 
     // Cargar citas cuando cambia la fecha o el contexto está listo
     useEffect(() => {
-        if (!appLoading) {
-            if (negocioId) {
-                fetchCitas();
-            } else {
-                // Si terminó de cargar la app y no hay negocioId, detener loading y mostrar error
-                console.warn('[Agenda] No negocioId found after app load');
-                setLoading(false);
-                setError('No se encontró información del negocio asociadas a tu cuenta.');
-            }
+        if (!appLoading && negocioId) {
+            fetchMonthMarks(currentMonth);
         }
-    }, [appLoading, negocioId, selectedDate, fetchCitas]);
+    }, [appLoading, negocioId, currentMonth, calendarFilter, fetchMonthMarks]);
 
     // Refrescar citas al volver a la pantalla
     useFocusEffect(
         useCallback(() => {
             if (!appLoading && negocioId) {
                 fetchCitas();
+                fetchMonthMarks(currentMonth);
             }
-        }, [appLoading, negocioId, fetchCitas])
+        }, [appLoading, negocioId, fetchCitas, fetchMonthMarks, currentMonth])
     );
 
     // Realtime subscription
@@ -346,7 +352,7 @@ export default function AgendaScreen() {
         return () => {
             supabase.removeChannel(channel);
         };
-    }, [negocioId, fetchCitas]);
+    }, [negocioId, rol, sucursalId, fetchCitas]);
 
     // Obtener nombre del cliente (SOLO si existe en BD, retorna null si no hay datos)
     const getClienteNombre = (cita: Cita): string | null => {
@@ -380,7 +386,15 @@ export default function AgendaScreen() {
 
     // Obtener colores por estado
     const getStatusColors = (status: string) => {
-        return STATUS_COLORS[status] || STATUS_COLORS.confirmada;
+        const professionalStatusColors: Record<string, { bg: string; text: string; border: string }> = {
+            confirmada: { bg: palette.infoBg, text: palette.infoText, border: palette.infoText },
+            pendiente: { bg: palette.infoBg, text: palette.infoText, border: palette.infoText },
+            en_proceso: { bg: palette.warningBg, text: palette.warningText, border: palette.warningText },
+            completada: { bg: palette.successBg, text: palette.successText, border: palette.successText },
+            cancelada: { bg: palette.dangerBg, text: palette.dangerText, border: palette.dangerText },
+            pendiente_pago: { bg: palette.warningBg, text: palette.warningText, border: palette.warningText },
+        };
+        return professionalStatusColors[status] || STATUS_COLORS.confirmada;
     };
 
     const handleStatusChange = async (cita: Cita, newState: string) => {
@@ -414,11 +428,39 @@ export default function AgendaScreen() {
         return sucursalNombre;
     };
 
+    const markedDates = useMemo(() => {
+        const today = getLocalToday();
+        const selectedMark = {
+            customStyles: {
+                container: { backgroundColor: theme.colors.primary, borderRadius: 16 },
+                text: { color: '#ffffff', fontWeight: '800' }
+            }
+        };
+
+        const todayMark = {
+            customStyles: {
+                container: {
+                    borderWidth: 1,
+                    borderColor: theme.colors.primary,
+                    borderRadius: 16,
+                    backgroundColor: palette.selectedBg
+                },
+                text: { color: palette.text, fontWeight: '700' }
+            }
+        };
+
+        return {
+            ...monthMarks,
+            ...(today !== selectedDate ? { [today]: todayMark } : {}),
+            [selectedDate]: selectedMark,
+        };
+    }, [monthMarks, selectedDate, theme.colors.primary, palette.selectedBg, palette.text]);
+
     return (
         <KyrosScreen title="Panel de Control">
 
             <ScrollView
-                style={styles.scrollContainer}
+                style={[styles.scrollContainer, { backgroundColor: palette.background }]}
                 showsVerticalScrollIndicator={false}
                 refreshControl={
                     <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
@@ -428,20 +470,20 @@ export default function AgendaScreen() {
 
                     {/* Encabezado y Filtros Movidos dentro del Scroll para maximizar espacio */}
                     <View style={{ gap: 12, marginBottom: 8 }}>
-                        <View style={[styles.headerContainer, { backgroundColor: '#111827', borderRadius: 16 }]}>
+                        <View style={[styles.headerContainer, { backgroundColor: palette.surface, borderColor: palette.border, borderRadius: 16 }]}>
                             <Text variant="headlineSmall" style={styles.headerTitle} numberOfLines={1}>
                                 Agenda {formatDateTitle(selectedDate)}
                             </Text>
 
                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flexShrink: 0 }}>
-                                    <TouchableOpacity onPress={() => setCalendarVisible(!calendarVisible)} style={styles.calendarToggleBtn}>
-                                        <MaterialIcons name={calendarVisible ? "event-busy" : "event"} size={22} color="#3b82f6" />
+                                    <TouchableOpacity onPress={() => setCalendarVisible(!calendarVisible)} style={[styles.calendarToggleBtn, { backgroundColor: palette.surface, borderColor: palette.borderStrong }]}>
+                                        <MaterialIcons name={calendarVisible ? "event-busy" : "event"} size={22} color={theme.colors.primary} />
                                     </TouchableOpacity>
 
                                     <TouchableOpacity
                                         onPress={() => router.push(`/citas/nueva?fecha=${selectedDate}`)}
                                         style={{
-                                            backgroundColor: '#1E66FF',
+                                            backgroundColor: theme.colors.primary,
                                             paddingHorizontal: 16,
                                             paddingVertical: 10,
                                             borderRadius: 24,
@@ -467,7 +509,7 @@ export default function AgendaScreen() {
                                     selectedValue={selectedSucursal}
                                     onValueChange={(val) => setSelectedSucursal(val)}
                                     icon="store"
-                                    style={{ backgroundColor: '#111827', borderWidth: 0 }}
+                                    style={{ backgroundColor: palette.surface, borderWidth: 0 }}
                                 />
                             </View>
                         )}
@@ -475,24 +517,24 @@ export default function AgendaScreen() {
 
                     {/* Dashboard Stats Panel */}
                     <View style={styles.statsRow}>
-                        <View style={[styles.statCard]}>
-                            <Text variant="labelMedium" style={{ color: '#94a3b8' }}>Citas</Text>
+                        <View style={[styles.statCard, { backgroundColor: palette.surface, borderColor: palette.borderStrong }]}>
+                            <Text variant="labelMedium" style={{ color: palette.textMuted }}>Citas</Text>
                             <Text variant="headlineSmall" style={{ fontWeight: 'bold', color: '#1E66FF' }}>{totalCitas}</Text>
                         </View>
-                        <View style={[styles.statCard]}>
-                            <Text variant="labelMedium" style={{ color: '#94a3b8' }}>Por Atender</Text>
+                        <View style={[styles.statCard, { backgroundColor: palette.surface, borderColor: palette.borderStrong }]}>
+                            <Text variant="labelMedium" style={{ color: palette.textMuted }}>Por Atender</Text>
                             <Text variant="headlineSmall" style={{ fontWeight: 'bold', color: '#f57c00' }}>{citasPendientes}</Text>
                         </View>
-                        <View style={[styles.statCard]}>
-                            <Text variant="labelMedium" style={{ color: '#94a3b8' }}>Estimado</Text>
+                        <View style={[styles.statCard, { backgroundColor: palette.surface, borderColor: palette.borderStrong }]}>
+                            <Text variant="labelMedium" style={{ color: palette.textMuted }}>Estimado</Text>
                             <Text variant="headlineSmall" style={{ fontWeight: 'bold', color: '#10b981' }}>${ingresoEstimado}</Text>
                         </View>
                     </View>
 
                     {/* Calendar Card (Collapsible) */}
                     {calendarVisible && (
-                        <View style={styles.calendarWrapper}>
-                            <Text style={{ textAlign: 'center', fontWeight: 'bold', fontSize: 16, marginBottom: 12, color: '#f8fafc' }}>
+                        <View style={[styles.calendarWrapper, { backgroundColor: palette.surface, borderColor: palette.borderStrong }]}>
+                            <Text style={{ textAlign: 'center', fontWeight: 'bold', fontSize: 16, marginBottom: 12, color: palette.text }}>
                                 {getBranchDisplayName()}
                             </Text>
                             <Calendar
@@ -501,28 +543,22 @@ export default function AgendaScreen() {
                                 onMonthChange={(month: { year: number, month: number }) => {
                                     setCurrentMonth(`${month.year}-${String(month.month).padStart(2, '0')}`);
                                 }}
-                                markedDates={{
-                                    ...monthMarks,
-                                    [selectedDate]: {
-                                        customStyles: {
-                                            container: { backgroundColor: theme.colors.primary, borderRadius: 16 },
-                                            text: { color: 'white', fontWeight: 'bold' }
-                                        }
-                                    }
-                                }}
+                                markedDates={markedDates}
+                                enableSwipeMonths
                                 theme={{
                                     calendarBackground: 'transparent',
                                     backgroundColor: 'transparent',
-                                    selectedDayBackgroundColor: '#3b82f6',
+                                    selectedDayBackgroundColor: theme.colors.primary,
                                     selectedDayTextColor: '#ffffff',
-                                    todayTextColor: '#3b82f6',
-                                    dayTextColor: '#e2e8f0',
-                                    textDisabledColor: '#475569',
-                                    dotColor: '#10b981',
+                                    todayTextColor: theme.colors.primary,
+                                    dayTextColor: palette.text,
+                                    textSectionTitleColor: palette.textMuted,
+                                    textDisabledColor: palette.disabled,
+                                    dotColor: palette.successText,
                                     selectedDotColor: '#ffffff',
-                                    arrowColor: '#94a3b8',
-                                    monthTextColor: '#f8fafc',
-                                    indicatorColor: '#3b82f6',
+                                    arrowColor: palette.icon,
+                                    monthTextColor: palette.text,
+                                    indicatorColor: theme.colors.primary,
                                     textDayFontFamily: 'System',
                                     textMonthFontFamily: 'System',
                                     textDayHeaderFontFamily: 'System',
@@ -540,19 +576,19 @@ export default function AgendaScreen() {
                                 {(['todas', 'proximas', 'completadas'] as const).map(f => (
                                     <TouchableOpacity
                                         key={f}
-                                        onPress={() => { setCalendarFilter(f); fetchMonthMarks(currentMonth); }}
+                                        onPress={() => setCalendarFilter(f)}
                                         style={{
                                             flex: 1,
                                             paddingVertical: 8,
                                             borderRadius: 10,
-                                            backgroundColor: calendarFilter === f ? 'rgba(56, 189, 248, 0.15)' : '#0f172a',
+                                            backgroundColor: calendarFilter === f ? palette.selectedBgStrong : palette.surfaceAlt,
                                             borderWidth: 1,
-                                            borderColor: calendarFilter === f ? '#38bdf8' : '#334155',
+                                            borderColor: calendarFilter === f ? theme.colors.primary : palette.border,
                                             alignItems: 'center',
                                         }}
                                     >
                                         <Text style={{
-                                            color: calendarFilter === f ? '#38bdf8' : '#94a3b8',
+                                            color: calendarFilter === f ? theme.colors.primary : palette.textMuted,
                                             fontSize: 12,
                                             fontWeight: calendarFilter === f ? '700' : '500',
                                         }}>
@@ -581,7 +617,7 @@ export default function AgendaScreen() {
                         {!loading && isOffline ? (
                             <View style={styles.centerState}>
                                 <MaterialIcons name="wifi-off" size={64} color="#888" />
-                                <Text variant="bodyLarge" style={[styles.stateText, { color: '#888', paddingHorizontal: 20 }]}>
+                                <Text variant="bodyLarge" style={[styles.stateText, { color: palette.textSoft, paddingHorizontal: 20 }]}>
                                     Sin conexión a Internet
                                 </Text>
                                 <Text style={[styles.stateText, { marginTop: 0, paddingHorizontal: 20, fontSize: 13 }]}>
@@ -594,7 +630,7 @@ export default function AgendaScreen() {
                         ) : !loading && error && error.toLowerCase().includes('negocio') ? (
                             <View style={styles.centerState}>
                                 <MaterialIcons name="storefront" size={64} color="#888" />
-                                <Text style={[styles.stateText, { color: '#555', fontSize: 16, marginBottom: 8 }]}>
+                                <Text style={[styles.stateText, { color: palette.textSoft, fontSize: 16, marginBottom: 8 }]}>
                                     Aún no tienes sucursales creadas
                                 </Text>
                                 <Text style={[styles.stateText, { marginTop: 0, paddingHorizontal: 20 }]}>
@@ -614,22 +650,26 @@ export default function AgendaScreen() {
                         ) : null}
 
                         {/* Empty State */}
-                        {!loading && !error && !isOffline && citas.length === 0 && (
+                        {!loading && !error && !isOffline && filteredCitas.length === 0 && (
                             <View style={styles.emptyState}>
                                 <MaterialIcons name="event-busy" size={64} color="#ccc" />
                                 <Text variant="bodyLarge" style={styles.emptyText}>
-                                    No hay citas programadas para este día.
+                                    {calendarFilter === 'todas'
+                                        ? 'No hay citas programadas para este día.'
+                                        : calendarFilter === 'completadas'
+                                            ? 'No hay citas completadas para este día.'
+                                            : 'No hay citas próximas para este día.'}
                                 </Text>
                             </View>
                         )}
 
                         {/* Appointments List */}
-                        {!loading && !error && !isOffline && citas.map((cita) => {
+                        {!loading && !error && !isOffline && filteredCitas.map((cita) => {
                             const statusColors = getStatusColors(cita.estado);
                             return (
                                 <View
                                     key={cita.id}
-                                    style={styles.card}
+                                    style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}
                                 >
                                     {/* Status accent bar */}
                                     <View style={[styles.cardAccent, { backgroundColor: statusColors.border }]} />
@@ -637,9 +677,9 @@ export default function AgendaScreen() {
                                     <View style={styles.cardBody}>
                                         {/* Top row: Time + Client + Status */}
                                         <View style={styles.cardTopRow}>
-                                            <View style={styles.timeChip}>
-                                                <MaterialIcons name="schedule" size={14} color="#38bdf8" />
-                                                <Text style={styles.timeChipText}>
+                                                <View style={styles.timeChip}>
+                                                <MaterialIcons name="schedule" size={14} color={palette.infoText} />
+                                                <Text style={[styles.timeChipText, { color: palette.infoText }]}>
                                                     {formatTime(cita.fecha_hora_inicio)} — {formatTime(cita.fecha_hora_fin)}
                                                 </Text>
                                             </View>
@@ -651,22 +691,22 @@ export default function AgendaScreen() {
                                         </View>
 
                                         {/* Client name */}
-                                        <Text style={styles.clientName}>
+                                        <Text style={[styles.clientName, { color: palette.textStrong }]}>
                                             {getClienteNombre(cita) || '(Sin cliente registrado)'}
                                         </Text>
 
                                         {/* Services */}
                                         {getServiciosNombres(cita) ? (
-                                            <Text style={styles.serviceText}>{getServiciosNombres(cita)}</Text>
+                                            <Text style={[styles.serviceText, { color: palette.textSoft }]}>{getServiciosNombres(cita)}</Text>
                                         ) : null}
 
                                         {/* Bottom row: Employee + Price + Actions */}
                                         <View style={styles.cardBottomRow}>
                                             <View style={styles.cardMeta}>
                                                 {getEmpleadoNombre(cita) && (
-                                                    <View style={styles.metaItem}>
-                                                        <MaterialIcons name="person" size={15} color="#64748b" />
-                                                        <Text style={styles.metaText}>{getEmpleadoNombre(cita)}</Text>
+                                                        <View style={styles.metaItem}>
+                                                        <MaterialIcons name="person" size={15} color={palette.textSoft} />
+                                                        <Text style={[styles.metaText, { color: palette.textMuted }]}>{getEmpleadoNombre(cita)}</Text>
                                                     </View>
                                                 )}
                                                 {(() => {
@@ -683,26 +723,26 @@ export default function AgendaScreen() {
                                             {/* Actions */}
                                             <View style={styles.cardActions}>
                                                 {cita.estado !== 'completada' && cita.estado !== 'cancelada' && (
-                                                    <TouchableOpacity onPress={() => router.push(`/citas/${cita.id}`)} style={styles.actionBtn}>
-                                                        <MaterialIcons name="edit" size={18} color="#94a3b8" />
+                                                    <TouchableOpacity onPress={() => router.push(`/citas/${cita.id}`)} style={[styles.actionBtn, { backgroundColor: palette.surfaceRaised, borderColor: palette.border }]}>
+                                                        <MaterialIcons name="edit" size={18} color={palette.infoText} />
                                                     </TouchableOpacity>
                                                 )}
 
                                                 {cita.estado === 'pendiente_pago' && (
-                                                    <TouchableOpacity onPress={() => handleStatusChange(cita, 'completada')} style={[styles.actionBtn, styles.actionPay]}>
-                                                        <MaterialIcons name="payments" size={18} color="#22c55e" />
+                                                    <TouchableOpacity onPress={() => handleStatusChange(cita, 'completada')} style={[styles.actionBtn, styles.actionPay, { backgroundColor: palette.successBg, borderColor: palette.successText }]}>
+                                                        <MaterialIcons name="payments" size={18} color={palette.successText} />
                                                     </TouchableOpacity>
                                                 )}
 
                                                 {cita.estado !== 'completada' && cita.estado !== 'pendiente_pago' && cita.estado !== 'cancelada' && (
-                                                    <TouchableOpacity onPress={() => handleStatusChange(cita, 'completada')} style={[styles.actionBtn, styles.actionComplete]}>
-                                                        <MaterialIcons name="check" size={18} color="#38bdf8" />
+                                                    <TouchableOpacity onPress={() => handleStatusChange(cita, 'completada')} style={[styles.actionBtn, styles.actionComplete, { backgroundColor: palette.infoBg, borderColor: palette.infoText }]}>
+                                                        <MaterialIcons name="check" size={18} color={palette.infoText} />
                                                     </TouchableOpacity>
                                                 )}
 
                                                 {cita.estado !== 'cancelada' && cita.estado !== 'completada' && (
-                                                    <TouchableOpacity onPress={() => handleStatusChange(cita, 'cancelada')} style={[styles.actionBtn, styles.actionCancel]}>
-                                                        <MaterialIcons name="close" size={18} color="#ef4444" />
+                                                    <TouchableOpacity onPress={() => handleStatusChange(cita, 'cancelada')} style={[styles.actionBtn, styles.actionCancel, { backgroundColor: palette.dangerBg, borderColor: palette.dangerText }]}>
+                                                        <MaterialIcons name="close" size={18} color={palette.dangerText} />
                                                     </TouchableOpacity>
                                                 )}
                                             </View>

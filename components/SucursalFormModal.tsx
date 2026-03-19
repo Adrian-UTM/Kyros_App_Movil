@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, Alert, Modal, TouchableOpacity, ScrollView } from 'react-native';
-import { Text, TextInput, HelperText, ActivityIndicator } from 'react-native-paper';
+import { Text, TextInput, HelperText, ActivityIndicator, useTheme } from 'react-native-paper';
 import { MaterialIcons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabaseClient';
 import { useApp } from '../lib/AppContext';
 import { safeAction } from '../lib/safeAction';
+import { useKyrosPalette } from '../lib/useKyrosPalette';
+import { useResponsiveLayout } from '../lib/useResponsiveLayout';
 
 interface SucursalData {
     id?: number;
@@ -29,6 +31,9 @@ interface Props {
 
 export default function SucursalFormModal({ visible, sucursal, onDismiss, onSaved }: Props) {
     const { negocioId } = useApp();
+    const theme = useTheme();
+    const palette = useKyrosPalette();
+    const responsive = useResponsiveLayout();
     const isEdit = !!sucursal?.id;
 
     const [nombre, setNombre] = useState('');
@@ -50,7 +55,7 @@ export default function SucursalFormModal({ visible, sucursal, onDismiss, onSave
             setTouched({ nombre: false, direccion: false, telefono: false, email: false, password: false });
             setShowPassword(false);
         }
-    }, [visible]);
+    }, [visible, sucursal]);
 
     const handlePhoneChange = (text: string) => {
         setTelefono(text.replace(/\D/g, ''));
@@ -120,39 +125,39 @@ export default function SucursalFormModal({ visible, sucursal, onDismiss, onSave
 
     return (
         <Modal visible={visible} transparent animationType="slide" onRequestClose={onDismiss}>
-            <View style={styles.overlay}>
-                <View style={styles.modal}>
+            <View style={[styles.overlay, { backgroundColor: palette.overlay }]}>
+                <View style={[styles.modal, { backgroundColor: palette.surface, borderColor: palette.borderStrong, width: '100%', maxWidth: responsive.modalMaxWidth, alignSelf: 'center' }]}>
                     <ScrollView showsVerticalScrollIndicator={false}>
                         {/* Header */}
                         <View style={styles.header}>
-                            <View style={styles.headerIcon}>
-                                <MaterialIcons name={isEdit ? "edit" : "store"} size={28} color="#38bdf8" />
+                            <View style={[styles.headerIcon, { backgroundColor: palette.selectedBg }]}>
+                                <MaterialIcons name={isEdit ? "edit" : "store"} size={28} color={theme.colors.primary} />
                             </View>
-                            <Text style={styles.title}>{isEdit ? 'Editar Sucursal' : 'Nueva Sucursal'}</Text>
-                            <Text style={styles.subtitle}>{isEdit ? 'Actualiza los datos' : 'Configura tu nueva sucursal'}</Text>
+                            <Text style={[styles.title, { color: palette.textStrong }]}>{isEdit ? 'Editar Sucursal' : 'Nueva Sucursal'}</Text>
+                            <Text style={[styles.subtitle, { color: palette.textSoft }]}>{isEdit ? 'Actualiza los datos' : 'Configura tu nueva sucursal'}</Text>
                         </View>
 
                         {/* Basic Info */}
                         <View style={styles.section}>
                             <View style={styles.sectionHeader}>
-                                <MaterialIcons name="store" size={18} color="#38bdf8" />
-                                <Text style={styles.sectionTitle}>Datos de la Sucursal</Text>
+                                <MaterialIcons name="store" size={18} color={theme.colors.primary} />
+                                <Text style={[styles.sectionTitle, { color: palette.textMuted }]}>Datos de la Sucursal</Text>
                             </View>
 
                             <TextInput
                                 mode="outlined" label="Nombre *" value={nombre} onChangeText={setNombre}
                                 onBlur={() => setTouched(t => ({ ...t, nombre: true }))}
                                 error={touched.nombre && !nombre.trim()}
-                                style={styles.input} textColor="#e2e8f0" outlineColor="#334155" activeOutlineColor="#38bdf8"
-                                theme={{ colors: { onSurfaceVariant: '#94a3b8' } }}
+                                style={[styles.input, { backgroundColor: palette.inputBg }]} textColor={palette.text} outlineColor={palette.border} activeOutlineColor={theme.colors.primary}
+                                theme={{ colors: { onSurfaceVariant: palette.textMuted } }}
                             />
                             {touched.nombre && !nombre.trim() && <HelperText type="error" visible>El nombre es requerido</HelperText>}
 
                             <TextInput
                                 mode="outlined" label="Dirección *" value={direccion} onChangeText={setDireccion}
                                 onBlur={() => setTouched(t => ({ ...t, direccion: true }))}
-                                style={styles.input} textColor="#e2e8f0" outlineColor="#334155" activeOutlineColor="#38bdf8"
-                                theme={{ colors: { onSurfaceVariant: '#94a3b8' } }}
+                                style={[styles.input, { backgroundColor: palette.inputBg }]} textColor={palette.text} outlineColor={palette.border} activeOutlineColor={theme.colors.primary}
+                                theme={{ colors: { onSurfaceVariant: palette.textMuted } }}
                             />
                             {touched.direccion && !direccion.trim() && <HelperText type="error" visible>La dirección es requerida</HelperText>}
 
@@ -160,8 +165,8 @@ export default function SucursalFormModal({ visible, sucursal, onDismiss, onSave
                                 mode="outlined" label="Teléfono *" value={telefono} onChangeText={handlePhoneChange}
                                 onBlur={() => setTouched(t => ({ ...t, telefono: true }))}
                                 keyboardType="phone-pad" maxLength={15}
-                                style={styles.input} textColor="#e2e8f0" outlineColor="#334155" activeOutlineColor="#38bdf8"
-                                theme={{ colors: { onSurfaceVariant: '#94a3b8' } }}
+                                style={[styles.input, { backgroundColor: palette.inputBg }]} textColor={palette.text} outlineColor={palette.border} activeOutlineColor={theme.colors.primary}
+                                theme={{ colors: { onSurfaceVariant: palette.textMuted } }}
                             />
                             {touched.telefono && (telefono.length < 10 || telefono.length > 15) && (
                                 <HelperText type="error" visible>
@@ -173,16 +178,16 @@ export default function SucursalFormModal({ visible, sucursal, onDismiss, onSave
                         {/* Account */}
                         <View style={styles.section}>
                             <View style={styles.sectionHeader}>
-                                <MaterialIcons name="lock" size={18} color="#38bdf8" />
-                                <Text style={styles.sectionTitle}>Cuenta de Acceso</Text>
+                                <MaterialIcons name="lock" size={18} color={theme.colors.primary} />
+                                <Text style={[styles.sectionTitle, { color: palette.textMuted }]}>Cuenta de Acceso</Text>
                             </View>
 
                             <TextInput
                                 mode="outlined" label="Correo de la Sucursal *" value={email} onChangeText={setEmail}
                                 onBlur={() => setTouched(t => ({ ...t, email: true }))}
                                 keyboardType="email-address" autoCapitalize="none"
-                                style={styles.input} textColor="#e2e8f0" outlineColor="#334155" activeOutlineColor="#38bdf8"
-                                theme={{ colors: { onSurfaceVariant: '#94a3b8' } }}
+                                style={[styles.input, { backgroundColor: palette.inputBg }]} textColor={palette.text} outlineColor={palette.border} activeOutlineColor={theme.colors.primary}
+                                theme={{ colors: { onSurfaceVariant: palette.textMuted } }}
                             />
                             {touched.email && (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) && (
                                 <HelperText type="error" visible>Ingresa un correo válido</HelperText>
@@ -193,8 +198,8 @@ export default function SucursalFormModal({ visible, sucursal, onDismiss, onSave
                                 onBlur={() => setTouched(t => ({ ...t, password: true }))}
                                 secureTextEntry={!showPassword}
                                 right={<TextInput.Icon icon={showPassword ? "eye-off" : "eye"} onPress={() => setShowPassword(!showPassword)} />}
-                                style={styles.input} textColor="#e2e8f0" outlineColor="#334155" activeOutlineColor="#38bdf8"
-                                theme={{ colors: { onSurfaceVariant: '#94a3b8' } }}
+                                style={[styles.input, { backgroundColor: palette.inputBg }]} textColor={palette.text} outlineColor={palette.border} activeOutlineColor={theme.colors.primary}
+                                theme={{ colors: { onSurfaceVariant: palette.textMuted } }}
                             />
                             {touched.password && !isEdit && password.length < 6 && (
                                 <HelperText type="error" visible>La contraseña debe tener al menos 6 caracteres</HelperText>
@@ -203,13 +208,13 @@ export default function SucursalFormModal({ visible, sucursal, onDismiss, onSave
 
                         {/* Actions */}
                         <View style={styles.actions}>
-                            <TouchableOpacity onPress={onDismiss} style={styles.cancelBtn}>
-                                <Text style={{ color: '#94a3b8', fontSize: 16, fontWeight: '600' }}>Cancelar</Text>
+                            <TouchableOpacity onPress={onDismiss} style={[styles.cancelBtn, { borderColor: palette.border }]}>
+                                <Text style={{ color: palette.textMuted, fontSize: 16, fontWeight: '600' }}>Cancelar</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                                 onPress={handleSave}
                                 disabled={!isFormValid || saving}
-                                style={[styles.saveBtn, (!isFormValid || saving) && { opacity: 0.5 }]}
+                                style={[styles.saveBtn, { backgroundColor: theme.colors.primary }, (!isFormValid || saving) && { opacity: 0.5 }]}
                             >
                                 {saving ? (
                                     <ActivityIndicator color="#fff" size="small" />

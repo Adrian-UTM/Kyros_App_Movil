@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Modal, Alert, ScrollView, TouchableOpacity, Image, Platform } from 'react-native';
-import { Text, TextInput, Button, useTheme, ActivityIndicator } from 'react-native-paper';
+import { StyleSheet, View, Modal, Alert, ScrollView, TouchableOpacity, Image } from 'react-native';
+import { Text, TextInput, useTheme, ActivityIndicator } from 'react-native-paper';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabaseClient';
 import { useApp } from '../lib/AppContext';
 import { safeAction } from '../lib/safeAction';
 import KyrosSelector from './KyrosSelector';
+import { useKyrosPalette } from '../lib/useKyrosPalette';
+import { useResponsiveLayout } from '../lib/useResponsiveLayout';
 
 interface Servicio {
     id: number;
@@ -28,6 +30,8 @@ interface ServicioFormModalProps {
 
 export default function ServicioFormModal({ visible, servicio, onDismiss, onServicioGuardado }: ServicioFormModalProps) {
     const theme = useTheme();
+    const palette = useKyrosPalette();
+    const responsive = useResponsiveLayout();
     const { negocioId, sucursalId, rol } = useApp();
 
     const [nombre, setNombre] = useState('');
@@ -241,10 +245,10 @@ export default function ServicioFormModal({ visible, servicio, onDismiss, onServ
             animationType="slide"
             onRequestClose={onDismiss}
         >
-            <View style={styles.modalOverlay}>
-                <View style={styles.modal}>
+            <View style={[styles.modalOverlay, { backgroundColor: palette.overlay }]}>
+                <View style={[styles.modal, { backgroundColor: palette.surface, borderColor: palette.borderStrong, width: '100%', maxWidth: responsive.modalMaxWidth, alignSelf: 'center' }]}>
                     <ScrollView showsVerticalScrollIndicator={false}>
-                        <Text style={styles.title}>
+                        <Text style={[styles.title, { color: palette.textStrong }]}>
                             {servicio ? 'Editar Servicio' : 'Nuevo Servicio'}
                         </Text>
 
@@ -253,26 +257,26 @@ export default function ServicioFormModal({ visible, servicio, onDismiss, onServ
                             {imagenUrl ? (
                                 <View style={styles.imagePreviewContainer}>
                                     <Image source={{ uri: imagenUrl }} style={styles.imagePreview} />
-                                    <TouchableOpacity style={styles.removeImageBtn} onPress={removeImage}>
+                                    <TouchableOpacity style={[styles.removeImageBtn, { backgroundColor: palette.surface }]} onPress={removeImage}>
                                         <MaterialIcons name="close" size={18} color="#fff" />
                                     </TouchableOpacity>
                                 </View>
                             ) : (
-                                <TouchableOpacity style={styles.imagePlaceholder} onPress={pickImage} disabled={imageUploading}>
+                                <TouchableOpacity style={[styles.imagePlaceholder, { borderColor: palette.border, backgroundColor: palette.surfaceAlt }]} onPress={pickImage} disabled={imageUploading}>
                                     {imageUploading ? (
-                                        <ActivityIndicator color="#38bdf8" />
+                                        <ActivityIndicator color={theme.colors.primary} />
                                     ) : (
                                         <>
-                                            <MaterialIcons name="add-photo-alternate" size={36} color="#38bdf8" />
-                                            <Text style={styles.imagePlaceholderText}>Agregar imagen</Text>
+                                            <MaterialIcons name="add-photo-alternate" size={36} color={theme.colors.primary} />
+                                            <Text style={[styles.imagePlaceholderText, { color: palette.textSoft }]}>Agregar imagen</Text>
                                         </>
                                     )}
                                 </TouchableOpacity>
                             )}
                             {imagenUrl && (
                                 <TouchableOpacity style={styles.changeImageBtn} onPress={pickImage} disabled={imageUploading}>
-                                    <MaterialIcons name="edit" size={16} color="#38bdf8" />
-                                    <Text style={{ color: '#38bdf8', marginLeft: 4, fontSize: 13 }}>Cambiar imagen</Text>
+                                    <MaterialIcons name="edit" size={16} color={theme.colors.primary} />
+                                    <Text style={{ color: theme.colors.primary, marginLeft: 4, fontSize: 13 }}>Cambiar imagen</Text>
                                 </TouchableOpacity>
                             )}
                         </View>
@@ -282,11 +286,11 @@ export default function ServicioFormModal({ visible, servicio, onDismiss, onServ
                             value={nombre}
                             onChangeText={setNombre}
                             mode="outlined"
-                            style={styles.input}
-                            textColor="#e2e8f0"
-                            outlineColor="#334155"
-                            activeOutlineColor="#38bdf8"
-                            theme={{ colors: { onSurfaceVariant: '#94a3b8' } }}
+                            style={[styles.input, { backgroundColor: palette.inputBg }]}
+                            textColor={palette.text}
+                            outlineColor={palette.border}
+                            activeOutlineColor={theme.colors.primary}
+                            theme={{ colors: { onSurfaceVariant: palette.textMuted } }}
                         />
 
                         <View style={styles.row}>
@@ -296,11 +300,11 @@ export default function ServicioFormModal({ visible, servicio, onDismiss, onServ
                                 onChangeText={setPrecio}
                                 mode="outlined"
                                 keyboardType="numeric"
-                                style={[styles.input, { flex: 1, marginRight: 8 }]}
-                                textColor="#e2e8f0"
-                                outlineColor="#334155"
-                                activeOutlineColor="#38bdf8"
-                                theme={{ colors: { onSurfaceVariant: '#94a3b8' } }}
+                                style={[styles.input, { flex: 1, marginRight: 8, backgroundColor: palette.inputBg }]}
+                                textColor={palette.text}
+                                outlineColor={palette.border}
+                                activeOutlineColor={theme.colors.primary}
+                                theme={{ colors: { onSurfaceVariant: palette.textMuted } }}
                             />
                             <TextInput
                                 label="Duración (min)"
@@ -308,11 +312,11 @@ export default function ServicioFormModal({ visible, servicio, onDismiss, onServ
                                 onChangeText={setDuracion}
                                 mode="outlined"
                                 keyboardType="numeric"
-                                style={[styles.input, { flex: 1, marginLeft: 8 }]}
-                                textColor="#e2e8f0"
-                                outlineColor="#334155"
-                                activeOutlineColor="#38bdf8"
-                                theme={{ colors: { onSurfaceVariant: '#94a3b8' } }}
+                                style={[styles.input, { flex: 1, marginLeft: 8, backgroundColor: palette.inputBg }]}
+                                textColor={palette.text}
+                                outlineColor={palette.border}
+                                activeOutlineColor={theme.colors.primary}
+                                theme={{ colors: { onSurfaceVariant: palette.textMuted } }}
                             />
                         </View>
 
@@ -323,16 +327,16 @@ export default function ServicioFormModal({ visible, servicio, onDismiss, onServ
                             mode="outlined"
                             multiline
                             numberOfLines={3}
-                            style={styles.input}
-                            textColor="#e2e8f0"
-                            outlineColor="#334155"
-                            activeOutlineColor="#38bdf8"
-                            theme={{ colors: { onSurfaceVariant: '#94a3b8' } }}
+                            style={[styles.input, { backgroundColor: palette.inputBg }]}
+                            textColor={palette.text}
+                            outlineColor={palette.border}
+                            activeOutlineColor={theme.colors.primary}
+                            theme={{ colors: { onSurfaceVariant: palette.textMuted } }}
                         />
 
                         {rol !== 'sucursal' && (
                             <View style={{ marginBottom: 16 }}>
-                                <Text style={{ color: '#94a3b8', fontSize: 13, fontWeight: '700', marginBottom: 8 }}>Asignar a Sucursal</Text>
+                                <Text style={{ color: palette.textMuted, fontSize: 13, fontWeight: '700', marginBottom: 8 }}>Asignar a Sucursal</Text>
                                 <KyrosSelector
                                     options={[
                                         { label: 'Global (Todas)', value: null },
@@ -345,13 +349,13 @@ export default function ServicioFormModal({ visible, servicio, onDismiss, onServ
                         )}
 
                         <View style={styles.actions}>
-                            <TouchableOpacity onPress={onDismiss} disabled={loading} style={styles.cancelBtn}>
-                                <Text style={{ color: '#94a3b8', fontSize: 16 }}>Cancelar</Text>
+                            <TouchableOpacity onPress={onDismiss} disabled={loading} style={[styles.cancelBtn, { borderColor: palette.border }]}>
+                                <Text style={{ color: palette.textMuted, fontSize: 16 }}>Cancelar</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                                 onPress={handleSave}
                                 disabled={loading || !isFormValid}
-                                style={[styles.saveBtn, (!isFormValid || loading) && { opacity: 0.5 }]}
+                                style={[styles.saveBtn, { backgroundColor: theme.colors.primary }, (!isFormValid || loading) && { opacity: 0.5 }]}
                             >
                                 {loading ? (
                                     <ActivityIndicator color="#fff" size="small" />

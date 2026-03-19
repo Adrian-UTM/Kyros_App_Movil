@@ -4,7 +4,6 @@ import { Text, useTheme } from 'react-native-paper';
 import { MaterialIcons } from '@expo/vector-icons';
 import KyrosScreen from '../../components/KyrosScreen';
 import KyrosCard from '../../components/KyrosCard';
-import KyrosButton from '../../components/KyrosButton';
 
 export default function SuscripcionScreen() {
     const theme = useTheme();

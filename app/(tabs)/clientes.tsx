@@ -1,11 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, View, ScrollView, Alert } from 'react-native';
-import { TextInput, Text, Avatar, List, useTheme, Divider, ActivityIndicator } from 'react-native-paper';
+import { StyleSheet, View, ScrollView, Alert, TouchableOpacity } from 'react-native';
+import { TextInput, Text, useTheme, ActivityIndicator } from 'react-native-paper';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
-import { TouchableOpacity } from 'react-native';
 import KyrosScreen from '../../components/KyrosScreen';
-import KyrosCard from '../../components/KyrosCard';
 import KyrosButton from '../../components/KyrosButton';
 import KyrosSelector from '../../components/KyrosSelector';
 import { supabase } from '../../lib/supabaseClient';
@@ -13,6 +11,7 @@ import { useApp } from '../../lib/AppContext';
 import ClienteNuevoModal from '../../components/ClienteNuevoModal';
 import ClienteEditModal from '../../components/ClienteEditModal';
 import { confirmAction } from '../../lib/confirm';
+import { useKyrosPalette } from '../../lib/useKyrosPalette';
 
 interface Cliente {
     id: number;
@@ -25,6 +24,7 @@ interface Cliente {
 
 export default function ClientesScreen() {
     const theme = useTheme();
+    const palette = useKyrosPalette();
     const [clientes, setClientes] = useState<Cliente[]>([]);
     const [filteredClientes, setFilteredClientes] = useState<Cliente[]>([]);
     const [loading, setLoading] = useState(true);
@@ -155,7 +155,7 @@ export default function ClientesScreen() {
         <KyrosScreen title="Clientes">
             <ScrollView style={styles.container}>
                 {/* Search + Add */}
-                <View style={[styles.topSection, { flexDirection: 'column', gap: 16 }]}>
+                <View style={[styles.topSection, { flexDirection: 'column', gap: 16, backgroundColor: palette.surface, borderColor: palette.border }]}>
                     <View style={{ flexDirection: 'row', gap: 12 }}>
                         <TextInput
                             label="Buscar cliente"
@@ -163,11 +163,11 @@ export default function ClientesScreen() {
                             value={searchQuery}
                             onChangeText={setSearchQuery}
                             left={<TextInput.Icon icon="magnify" />}
-                            style={[styles.searchInput, { flex: 1, marginBottom: 0 }]}
-                            textColor="#e2e8f0"
-                            outlineColor="#334155"
+                            style={[styles.searchInput, { flex: 1, marginBottom: 0, backgroundColor: palette.inputBg }]}
+                            textColor={palette.text}
+                            outlineColor={palette.border}
                             activeOutlineColor="#38bdf8"
-                            theme={{ colors: { onSurfaceVariant: '#94a3b8' } }}
+                            theme={{ colors: { onSurfaceVariant: palette.textMuted } }}
                         />
                         <KyrosButton 
                             mode="contained" 
@@ -204,7 +204,7 @@ export default function ClientesScreen() {
                 {/* Error */}
                 {!loading && error && error?.toLowerCase().includes('negocio') ? (
                     <View style={styles.centerState}>
-                        <MaterialIcons name="storefront" size={64} color="#64748b" />
+                        <MaterialIcons name="storefront" size={64} color={palette.textSoft} />
                         <Text style={[styles.stateText, { fontSize: 16, marginBottom: 8 }]}>Aún no tienes sucursales</Text>
                         <Text style={[styles.stateText, { marginTop: 0, paddingHorizontal: 20 }]}>Agrega una sucursal para poder agregar clientes.</Text>
                     </View>
@@ -219,7 +219,7 @@ export default function ClientesScreen() {
                 {/* Empty */}
                 {!loading && !error && clientes.length === 0 && (
                     <View style={styles.centerState}>
-                        <MaterialIcons name="person-add" size={64} color="#64748b" />
+                        <MaterialIcons name="person-add" size={64} color={palette.textSoft} />
                         <Text style={styles.stateText}>No hay clientes registrados</Text>
                         <KyrosButton onPress={() => setNuevoModalVisible(true)} style={{ marginTop: 16 }}>Agregar Cliente</KyrosButton>
                     </View>
@@ -229,25 +229,25 @@ export default function ClientesScreen() {
                 {!loading && !error && filteredClientes.length > 0 && (
                     <View style={styles.listSection}>
                         <View style={styles.sectionHeader}>
-                            <MaterialIcons name="people" size={18} color="#38bdf8" />
-                            <Text style={styles.sectionTitle}>Clientes ({filteredClientes.length})</Text>
+                            <MaterialIcons name="people" size={18} color={theme.colors.primary} />
+                            <Text style={[styles.sectionTitle, { color: palette.textMuted }]}>Clientes ({filteredClientes.length})</Text>
                         </View>
 
                         {filteredClientes.map(cliente => (
-                            <View key={cliente.id} style={styles.clientCard}>
-                                <View style={styles.avatarCircle}>
-                                    <Text style={styles.avatarText}>{getInitials(cliente.nombre)}</Text>
+                            <View key={cliente.id} style={[styles.clientCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+                                <View style={[styles.avatarCircle, { backgroundColor: palette.surfaceRaised }]}>
+                                    <Text style={[styles.avatarText, { color: theme.colors.primary }]}>{getInitials(cliente.nombre)}</Text>
                                 </View>
                                 <View style={styles.clientInfo}>
-                                    <Text style={styles.clientName}>{cliente.nombre}</Text>
-                                    <Text style={styles.clientPhone}>{cliente.telefono || 'Sin teléfono'} • {cliente.sucursal_nombre}</Text>
+                                    <Text style={[styles.clientName, { color: palette.text }]}>{cliente.nombre}</Text>
+                                    <Text style={[styles.clientPhone, { color: palette.textMuted }]}>{cliente.telefono || 'Sin teléfono'} • {cliente.sucursal_nombre}</Text>
                                 </View>
                                 <View style={styles.clientActions}>
-                                    <TouchableOpacity onPress={() => { setSelectedCliente(cliente); setEditModalVisible(true); }} style={styles.actionBtn}>
-                                        <MaterialIcons name="edit" size={18} color="#94a3b8" />
+                                    <TouchableOpacity onPress={() => { setSelectedCliente(cliente); setEditModalVisible(true); }} style={[styles.actionBtn, { backgroundColor: palette.infoBg, borderColor: palette.infoText }]}>
+                                        <MaterialIcons name="edit" size={18} color={palette.infoText} />
                                     </TouchableOpacity>
-                                    <TouchableOpacity onPress={() => handleDelete(cliente)} style={[styles.actionBtn, styles.actionDelete]}>
-                                        <MaterialIcons name="delete" size={18} color="#ef4444" />
+                                    <TouchableOpacity onPress={() => handleDelete(cliente)} style={[styles.actionBtn, styles.actionDelete, { backgroundColor: palette.dangerBg, borderColor: palette.dangerText }]}>
+                                        <MaterialIcons name="delete" size={18} color={palette.dangerText} />
                                     </TouchableOpacity>
                                 </View>
                             </View>
@@ -258,7 +258,7 @@ export default function ClientesScreen() {
                 {/* No search results */}
                 {!loading && !error && clientes.length > 0 && filteredClientes.length === 0 && (
                     <View style={styles.centerState}>
-                        <MaterialIcons name="search-off" size={48} color="#64748b" />
+                        <MaterialIcons name="search-off" size={48} color={palette.textSoft} />
                         <Text style={styles.stateText}>No se encontraron clientes</Text>
                     </View>
                 )}

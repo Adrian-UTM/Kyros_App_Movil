@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, Alert, Modal, TouchableOpacity, ScrollView } from 'react-native';
-import { Text, TextInput, HelperText, ActivityIndicator } from 'react-native-paper';
+import { Text, TextInput, HelperText, ActivityIndicator, useTheme } from 'react-native-paper';
 import { MaterialIcons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabaseClient';
 import { useApp } from '../lib/AppContext';
 import { safeAction } from '../lib/safeAction';
 import KyrosSelector from './KyrosSelector';
+import { useKyrosPalette } from '../lib/useKyrosPalette';
+import { useResponsiveLayout } from '../lib/useResponsiveLayout';
 
 const PHONE_MIN_LENGTH = 10;
 const PHONE_MAX_LENGTH = 15;
@@ -19,6 +21,9 @@ interface ClienteNuevoModalProps {
 
 export default function ClienteNuevoModal({ visible, onDismiss, onClienteCreado, sucursales = [] }: ClienteNuevoModalProps) {
     const { negocioId, sucursalId, rol } = useApp();
+    const theme = useTheme();
+    const palette = useKyrosPalette();
+    const responsive = useResponsiveLayout();
 
     const [nombre, setNombre] = useState('');
     const [telefono, setTelefono] = useState('');
@@ -92,23 +97,23 @@ export default function ClienteNuevoModal({ visible, onDismiss, onClienteCreado,
 
     return (
         <Modal visible={visible} transparent animationType="slide" onRequestClose={onDismiss}>
-            <View style={styles.overlay}>
-                <View style={styles.modal}>
+            <View style={[styles.overlay, { backgroundColor: palette.overlay }]}>
+                <View style={[styles.modal, { backgroundColor: palette.surface, borderColor: palette.borderStrong, width: '100%', maxWidth: responsive.modalMaxWidth, alignSelf: 'center' }]}>
                     <ScrollView showsVerticalScrollIndicator={false}>
                         {/* Header */}
                         <View style={styles.header}>
-                            <View style={styles.headerIcon}>
-                                <MaterialIcons name="person-add" size={28} color="#38bdf8" />
+                            <View style={[styles.headerIcon, { backgroundColor: palette.selectedBg }]}>
+                                <MaterialIcons name="person-add" size={28} color={theme.colors.primary} />
                             </View>
-                            <Text style={styles.title}>Nuevo Cliente</Text>
-                            <Text style={styles.subtitle}>Agrega los datos del cliente</Text>
+                            <Text style={[styles.title, { color: palette.textStrong }]}>Nuevo Cliente</Text>
+                            <Text style={[styles.subtitle, { color: palette.textSoft }]}>Agrega los datos del cliente</Text>
                         </View>
 
                         {/* Form */}
                         <View style={styles.section}>
                             <View style={styles.sectionHeader}>
-                                <MaterialIcons name="person" size={18} color="#38bdf8" />
-                                <Text style={styles.sectionTitle}>Información</Text>
+                                <MaterialIcons name="person" size={18} color={theme.colors.primary} />
+                                <Text style={[styles.sectionTitle, { color: palette.textMuted }]}>Información</Text>
                             </View>
 
                             <TextInput
@@ -117,11 +122,11 @@ export default function ClienteNuevoModal({ visible, onDismiss, onClienteCreado,
                                 value={nombre}
                                 onChangeText={handleNombreChange}
                                 error={!!errors.nombre}
-                                style={styles.input}
-                                textColor="#e2e8f0"
-                                outlineColor="#334155"
-                                activeOutlineColor="#38bdf8"
-                                theme={{ colors: { onSurfaceVariant: '#94a3b8' } }}
+                                style={[styles.input, { backgroundColor: palette.inputBg }]}
+                                textColor={palette.text}
+                                outlineColor={palette.border}
+                                activeOutlineColor={theme.colors.primary}
+                                theme={{ colors: { onSurfaceVariant: palette.textMuted } }}
                             />
                             {errors.nombre && <HelperText type="error" visible>{errors.nombre}</HelperText>}
 
@@ -133,11 +138,11 @@ export default function ClienteNuevoModal({ visible, onDismiss, onClienteCreado,
                                 keyboardType="number-pad"
                                 maxLength={PHONE_MAX_LENGTH}
                                 error={!!errors.telefono}
-                                style={styles.input}
-                                textColor="#e2e8f0"
-                                outlineColor="#334155"
-                                activeOutlineColor="#38bdf8"
-                                theme={{ colors: { onSurfaceVariant: '#94a3b8' } }}
+                                style={[styles.input, { backgroundColor: palette.inputBg }]}
+                                textColor={palette.text}
+                                outlineColor={palette.border}
+                                activeOutlineColor={theme.colors.primary}
+                                theme={{ colors: { onSurfaceVariant: palette.textMuted } }}
                                 right={telefono.length > 0 ? <TextInput.Affix text={`${telefono.length}/${PHONE_MIN_LENGTH}`} /> : undefined}
                             />
                             {errors.telefono && <HelperText type="error" visible>{errors.telefono}</HelperText>}
@@ -145,8 +150,8 @@ export default function ClienteNuevoModal({ visible, onDismiss, onClienteCreado,
                             {rol !== 'sucursal' && sucursales.length > 0 && (
                                 <View style={{ marginTop: 16 }}>
                                     <View style={[styles.sectionHeader, { marginBottom: 8 }]}>
-                                        <MaterialIcons name="store" size={18} color="#38bdf8" />
-                                        <Text style={styles.sectionTitle}>Sucursal *</Text>
+                                        <MaterialIcons name="store" size={18} color={theme.colors.primary} />
+                                        <Text style={[styles.sectionTitle, { color: palette.textMuted }]}>Sucursal *</Text>
                                     </View>
                                     <KyrosSelector
                                         options={sucursales.map(s => ({ label: s.nombre, value: s.id }))}
@@ -164,13 +169,13 @@ export default function ClienteNuevoModal({ visible, onDismiss, onClienteCreado,
 
                         {/* Actions */}
                         <View style={styles.actions}>
-                            <TouchableOpacity onPress={onDismiss} disabled={loading} style={styles.cancelBtn}>
-                                <Text style={{ color: '#94a3b8', fontSize: 16, fontWeight: '600' }}>Cancelar</Text>
+                            <TouchableOpacity onPress={onDismiss} disabled={loading} style={[styles.cancelBtn, { borderColor: palette.border }]}>
+                                <Text style={{ color: palette.textMuted, fontSize: 16, fontWeight: '600' }}>Cancelar</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                                 onPress={handleGuardar}
                                 disabled={loading || !isFormValid}
-                                style={[styles.saveBtn, (!isFormValid || loading) && { opacity: 0.5 }]}
+                                style={[styles.saveBtn, { backgroundColor: theme.colors.primary }, (!isFormValid || loading) && { opacity: 0.5 }]}
                             >
                                 {loading ? (
                                     <ActivityIndicator color="#fff" size="small" />

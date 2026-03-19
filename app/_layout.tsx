@@ -7,6 +7,7 @@ import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { useRealtimeNotifications } from '../lib/useRealtimeNotifications';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 // Prevent splash screen from auto-hiding before fonts are loaded
 SplashScreen.preventAutoHideAsync();
@@ -18,11 +19,11 @@ const lightTheme = {
     ...MD3LightTheme.colors,
     primary: '#1E66FF', // Azul Corporativo (Kyros)
     secondary: '#1565c0',
-    background: '#ffffff', // White background
-    surface: '#ffffff', // White surface
+    background: '#f5f7fb',
+    surface: '#ffffff',
     onBackground: '#111111', // Dark text on background
     onSurface: '#111111', // Dark text on surface
-    outline: '#e0e0e0', // Light outline
+    outline: '#d7e1ee',
   },
 };
 
@@ -49,7 +50,7 @@ function ThemeWrapper() {
 
   return (
     <PaperProvider theme={theme}>
-      <Stack screenOptions={{ headerShown: false }}>
+      <Stack screenOptions={{ headerShown: false, gestureEnabled: true }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="register" />
         <Stack.Screen name="(tabs)" />
@@ -76,13 +77,13 @@ export default function RootLayout() {
   }
 
   return (
-    <>
+    <GestureHandlerRootView style={{ flex: 1 }}>
       <Head>
         <title>KyrosApp</title>
       </Head>
       <AppProvider>
         <ThemeWrapper />
       </AppProvider>
-    </>
+    </GestureHandlerRootView>
   );
 }

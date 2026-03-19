@@ -1,17 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, Alert, TouchableOpacity, Platform, Modal as RNModal, FlatList } from 'react-native';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { View, StyleSheet, ScrollView, Alert, TouchableOpacity, Platform, Modal as RNModal, Image } from 'react-native';
 import { Text, TextInput, useTheme, ActivityIndicator } from 'react-native-paper';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
-import { Picker } from '@react-native-picker/picker';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { getLocalToday } from '../../lib/date';
 import KyrosScreen from '../../components/KyrosScreen';
 import ClienteNuevoModal from '../../components/ClienteNuevoModal';
 import { supabase } from '../../lib/supabaseClient';
 import { useApp } from '../../lib/AppContext';
 import { safeAction } from '../../lib/safeAction';
-import { isTimeOverlap } from '../../lib/date';
+import { useKyrosPalette } from '../../lib/useKyrosPalette';
+import { useResponsiveLayout } from '../../lib/useResponsiveLayout';
 
 // ============================================================
 // TIPOS
@@ -21,6 +20,7 @@ interface Servicio {
     nombre: string;
     precio_base: number;
     duracion_aprox_minutos: number;
+    imagen_url?: string | null;
 }
 
 interface Cliente {
@@ -59,6 +59,8 @@ function TimePickerModal({ visible, value, onSelect, onClose }: {
     onSelect: (time: string) => void;
     onClose: () => void;
 }) {
+    const theme = useTheme();
+    const palette = useKyrosPalette();
     const [selectedHour12, setSelectedHour12] = useState(9);
     const [selectedMinute, setSelectedMinute] = useState(0);
     const [isPM, setIsPM] = useState(false);
@@ -79,9 +81,7 @@ function TimePickerModal({ visible, value, onSelect, onClose }: {
 
     const hours12 = Array.from({ length: 12 }, (_, i) => i + 1);
     const minutes = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
-    const itemHeight = 44; // Approx height of each wheel item
-
-    const handleScrollReset = (event: any, itemsLength: number) => {
+    const handleScrollReset = (event: any) => {
         const offsetY = event.nativeEvent.contentOffset.y;
         const contentHeight = event.nativeEvent.contentSize.height;
         const layoutHeight = event.nativeEvent.layoutMeasurement.height;
@@ -98,34 +98,34 @@ function TimePickerModal({ visible, value, onSelect, onClose }: {
 
     return (
         <RNModal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-            <TouchableOpacity style={timeStyles.overlay} activeOpacity={1} onPress={onClose}>
-                <TouchableOpacity activeOpacity={1} style={timeStyles.container}>
-                    <Text style={timeStyles.title}>Seleccionar Hora</Text>
+            <TouchableOpacity style={[timeStyles.overlay, { backgroundColor: palette.overlay }]} activeOpacity={1} onPress={onClose}>
+                <TouchableOpacity activeOpacity={1} style={[timeStyles.container, { backgroundColor: palette.surface, borderColor: palette.borderStrong }]}>
+                    <Text style={[timeStyles.title, { color: palette.textStrong }]}>Seleccionar Hora</Text>
 
-                    <View style={timeStyles.preview}>
-                        <Text style={timeStyles.previewText}>
+                    <View style={[timeStyles.preview, { backgroundColor: palette.surfaceAlt }]}>
+                        <Text style={[timeStyles.previewText, { color: theme.colors.primary }]}>
                             {selectedHour12.toString().padStart(2, '0')}:{selectedMinute.toString().padStart(2, '0')}
-                            <Text style={{ fontSize: 24, color: '#94a3b8' }}> {isPM ? 'PM' : 'AM'}</Text>
+                            <Text style={{ fontSize: 24, color: palette.textMuted }}> {isPM ? 'PM' : 'AM'}</Text>
                         </Text>
                     </View>
 
                     <View style={timeStyles.wheelsRow}>
                         {/* Hours Column */}
                         <View style={timeStyles.column}>
-                            <Text style={timeStyles.columnLabel}>Hora</Text>
+                            <Text style={[timeStyles.columnLabel, { color: palette.textSoft }]}>Hora</Text>
                             <ScrollView
                                 style={timeStyles.scrollColumn}
                                 showsVerticalScrollIndicator={false}
-                                onScroll={(e) => handleScrollReset(e, hours12.length)}
+                                onScroll={handleScrollReset}
                                 scrollEventThrottle={16}
                             >
                                 {hours12.map(h => (
                                     <TouchableOpacity
                                         key={h}
                                         onPress={() => setSelectedHour12(h)}
-                                        style={[timeStyles.wheelItem, selectedHour12 === h && timeStyles.wheelItemSelected]}
+                                        style={[timeStyles.wheelItem, selectedHour12 === h && [timeStyles.wheelItemSelected, { backgroundColor: palette.selectedBgStrong }]]}
                                     >
-                                        <Text style={[timeStyles.wheelText, selectedHour12 === h && timeStyles.wheelTextSelected]}>
+                                        <Text style={[timeStyles.wheelText, { color: palette.textMuted }, selectedHour12 === h && [timeStyles.wheelTextSelected, { color: theme.colors.primary }]]}>
                                             {h.toString().padStart(2, '0')}
                                         </Text>
                                     </TouchableOpacity>
@@ -136,24 +136,24 @@ function TimePickerModal({ visible, value, onSelect, onClose }: {
                         </View>
 
                         {/* Separator */}
-                        <Text style={timeStyles.separator}>:</Text>
+                        <Text style={[timeStyles.separator, { color: theme.colors.primary }]}>:</Text>
 
                         {/* Minutes Column */}
                         <View style={timeStyles.column}>
-                            <Text style={timeStyles.columnLabel}>Min</Text>
+                            <Text style={[timeStyles.columnLabel, { color: palette.textSoft }]}>Min</Text>
                             <ScrollView
                                 style={timeStyles.scrollColumn}
                                 showsVerticalScrollIndicator={false}
-                                onScroll={(e) => handleScrollReset(e, minutes.length)}
+                                onScroll={handleScrollReset}
                                 scrollEventThrottle={16}
                             >
                                 {minutes.map(m => (
                                     <TouchableOpacity
                                         key={m}
                                         onPress={() => setSelectedMinute(m)}
-                                        style={[timeStyles.wheelItem, selectedMinute === m && timeStyles.wheelItemSelected]}
+                                        style={[timeStyles.wheelItem, selectedMinute === m && [timeStyles.wheelItemSelected, { backgroundColor: palette.selectedBgStrong }]]}
                                     >
-                                        <Text style={[timeStyles.wheelText, selectedMinute === m && timeStyles.wheelTextSelected]}>
+                                        <Text style={[timeStyles.wheelText, { color: palette.textMuted }, selectedMinute === m && [timeStyles.wheelTextSelected, { color: theme.colors.primary }]]}>
                                             {m.toString().padStart(2, '0')}
                                         </Text>
                                     </TouchableOpacity>
@@ -166,22 +166,22 @@ function TimePickerModal({ visible, value, onSelect, onClose }: {
                         <View style={[timeStyles.column, { width: 80, marginLeft: 10, justifyContent: 'center' }]}>
                             <TouchableOpacity
                                 onPress={() => setIsPM(false)}
-                                style={[timeStyles.ampmBtn, !isPM && timeStyles.ampmBtnSelected]}
+                                style={[timeStyles.ampmBtn, { borderColor: palette.border }, !isPM && [timeStyles.ampmBtnSelected, { backgroundColor: palette.selectedBgStrong, borderColor: theme.colors.primary }]]}
                             >
-                                <Text style={[timeStyles.ampmText, !isPM && timeStyles.ampmTextSelected]}>AM</Text>
+                                <Text style={[timeStyles.ampmText, { color: palette.textMuted }, !isPM && [timeStyles.ampmTextSelected, { color: theme.colors.primary }]]}>AM</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                                 onPress={() => setIsPM(true)}
-                                style={[timeStyles.ampmBtn, isPM && timeStyles.ampmBtnSelected]}
+                                style={[timeStyles.ampmBtn, { borderColor: palette.border }, isPM && [timeStyles.ampmBtnSelected, { backgroundColor: palette.selectedBgStrong, borderColor: theme.colors.primary }]]}
                             >
-                                <Text style={[timeStyles.ampmText, isPM && timeStyles.ampmTextSelected]}>PM</Text>
+                                <Text style={[timeStyles.ampmText, { color: palette.textMuted }, isPM && [timeStyles.ampmTextSelected, { color: theme.colors.primary }]]}>PM</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
 
                     <View style={timeStyles.actions}>
-                        <TouchableOpacity onPress={onClose} style={timeStyles.cancelBtn}>
-                            <Text style={{ color: '#94a3b8', fontSize: 16 }}>Cancelar</Text>
+                        <TouchableOpacity onPress={onClose} style={[timeStyles.cancelBtn, { borderColor: palette.border }]}>
+                            <Text style={{ color: palette.textMuted, fontSize: 16 }}>Cancelar</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                             onPress={() => {
@@ -193,9 +193,9 @@ function TimePickerModal({ visible, value, onSelect, onClose }: {
                                 onSelect(`${finalHour24.toString().padStart(2, '0')}:${selectedMinute.toString().padStart(2, '0')}`);
                                 onClose();
                             }}
-                            style={timeStyles.confirmBtn}
+                            style={[timeStyles.confirmBtn, { backgroundColor: theme.colors.primary }]}
                         >
-                            <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>Confirmar</Text>
+                    <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>Confirmar</Text>
                         </TouchableOpacity>
                     </View>
                 </TouchableOpacity>
@@ -212,7 +212,9 @@ function DatePickerModal({ visible, value, onSelect, onClose }: {
     onSelect: (date: string) => void;
     onClose: () => void;
 }) {
-    const today = new Date();
+    const theme = useTheme();
+    const palette = useKyrosPalette();
+    const today = useMemo(() => new Date(), []);
     const [selectedYear, setSelectedYear] = useState(today.getFullYear());
     const [selectedMonth, setSelectedMonth] = useState(today.getMonth() + 1);
     const [selectedDay, setSelectedDay] = useState(today.getDate());
@@ -228,7 +230,7 @@ function DatePickerModal({ visible, value, onSelect, onClose }: {
             setSelectedMonth(today.getMonth() + 1);
             setSelectedDay(today.getDate());
         }
-    }, [value, visible]);
+    }, [value, visible, today]);
 
     const years = Array.from({ length: 5 }, (_, i) => today.getFullYear() + i);
     const isCurrentYear = selectedYear === today.getFullYear();
@@ -254,7 +256,7 @@ function DatePickerModal({ visible, value, onSelect, onClose }: {
         }
     }, [isCurrentMonth, selectedMonth, selectedYear, daysInMonth, selectedDay, today]);
 
-    const handleScrollReset = (event: any, itemsLength: number) => {
+    const handleScrollReset = (event: any) => {
         const offsetY = event.nativeEvent.contentOffset.y;
         const contentHeight = event.nativeEvent.contentSize.height;
         const layoutHeight = event.nativeEvent.layoutMeasurement.height;
@@ -270,12 +272,12 @@ function DatePickerModal({ visible, value, onSelect, onClose }: {
 
     return (
         <RNModal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-            <TouchableOpacity style={timeStyles.overlay} activeOpacity={1} onPress={onClose}>
-                <TouchableOpacity activeOpacity={1} style={timeStyles.container}>
-                    <Text style={timeStyles.title}>Seleccionar Fecha</Text>
+            <TouchableOpacity style={[timeStyles.overlay, { backgroundColor: palette.overlay }]} activeOpacity={1} onPress={onClose}>
+                <TouchableOpacity activeOpacity={1} style={[timeStyles.container, { backgroundColor: palette.surface, borderColor: palette.borderStrong }]}>
+                    <Text style={[timeStyles.title, { color: palette.textStrong }]}>Seleccionar Fecha</Text>
 
-                    <View style={timeStyles.preview}>
-                        <Text style={[timeStyles.previewText, { fontSize: 28 }]}>
+                    <View style={[timeStyles.preview, { backgroundColor: palette.surfaceAlt }]}>
+                        <Text style={[timeStyles.previewText, { fontSize: 28, color: theme.colors.primary }]}>
                             {selectedDay.toString().padStart(2, '0')} / {monthNames[selectedMonth - 1]} / {selectedYear}
                         </Text>
                     </View>
@@ -283,20 +285,20 @@ function DatePickerModal({ visible, value, onSelect, onClose }: {
                     <View style={timeStyles.wheelsRow}>
                         {/* Day Column */}
                         <View style={[timeStyles.column, { width: 70 }]}>
-                            <Text style={timeStyles.columnLabel}>Día</Text>
+                            <Text style={[timeStyles.columnLabel, { color: palette.textSoft }]}>Día</Text>
                             <ScrollView
                                 style={timeStyles.scrollColumn}
                                 showsVerticalScrollIndicator={false}
-                                onScroll={(e) => handleScrollReset(e, days.length)}
+                                onScroll={handleScrollReset}
                                 scrollEventThrottle={16}
                             >
                                 {days.map(d => (
                                     <TouchableOpacity
                                         key={d}
                                         onPress={() => setSelectedDay(d)}
-                                        style={[timeStyles.wheelItem, selectedDay === d && timeStyles.wheelItemSelected, { paddingHorizontal: 10 }]}
+                                        style={[timeStyles.wheelItem, selectedDay === d && [timeStyles.wheelItemSelected, { backgroundColor: palette.selectedBgStrong }], { paddingHorizontal: 10 }]}
                                     >
-                                        <Text style={[timeStyles.wheelText, selectedDay === d && timeStyles.wheelTextSelected]}>
+                                        <Text style={[timeStyles.wheelText, { color: palette.textMuted }, selectedDay === d && [timeStyles.wheelTextSelected, { color: theme.colors.primary }]]}>
                                             {d.toString().padStart(2, '0')}
                                         </Text>
                                     </TouchableOpacity>
@@ -305,24 +307,24 @@ function DatePickerModal({ visible, value, onSelect, onClose }: {
                             </ScrollView>
                         </View>
 
-                        <Text style={timeStyles.separator}>/</Text>
+                        <Text style={[timeStyles.separator, { color: theme.colors.primary }]}>/</Text>
 
                         {/* Month Column */}
                         <View style={[timeStyles.column, { width: 90 }]}>
-                            <Text style={timeStyles.columnLabel}>Mes</Text>
+                            <Text style={[timeStyles.columnLabel, { color: palette.textSoft }]}>Mes</Text>
                             <ScrollView
                                 style={timeStyles.scrollColumn}
                                 showsVerticalScrollIndicator={false}
-                                onScroll={(e) => handleScrollReset(e, months.length)}
+                                onScroll={handleScrollReset}
                                 scrollEventThrottle={16}
                             >
                                 {months.map(m => (
                                     <TouchableOpacity
                                         key={m}
                                         onPress={() => setSelectedMonth(m)}
-                                        style={[timeStyles.wheelItem, selectedMonth === m && timeStyles.wheelItemSelected, { paddingHorizontal: 10 }]}
+                                        style={[timeStyles.wheelItem, selectedMonth === m && [timeStyles.wheelItemSelected, { backgroundColor: palette.selectedBgStrong }], { paddingHorizontal: 10 }]}
                                     >
-                                        <Text style={[timeStyles.wheelText, selectedMonth === m && timeStyles.wheelTextSelected, { fontSize: 18 }]}>
+                                        <Text style={[timeStyles.wheelText, { color: palette.textMuted }, selectedMonth === m && [timeStyles.wheelTextSelected, { color: theme.colors.primary }], { fontSize: 18 }]}>
                                             {monthNames[m - 1]}
                                         </Text>
                                     </TouchableOpacity>
@@ -331,11 +333,11 @@ function DatePickerModal({ visible, value, onSelect, onClose }: {
                             </ScrollView>
                         </View>
 
-                        <Text style={timeStyles.separator}>/</Text>
+                        <Text style={[timeStyles.separator, { color: theme.colors.primary }]}>/</Text>
 
                         {/* Year Column */}
                         <View style={[timeStyles.column, { width: 80 }]}>
-                            <Text style={timeStyles.columnLabel}>Año</Text>
+                            <Text style={[timeStyles.columnLabel, { color: palette.textSoft }]}>Año</Text>
                             <ScrollView
                                 style={timeStyles.scrollColumn}
                                 showsVerticalScrollIndicator={false}
@@ -357,8 +359,8 @@ function DatePickerModal({ visible, value, onSelect, onClose }: {
                     </View>
 
                     <View style={timeStyles.actions}>
-                        <TouchableOpacity onPress={onClose} style={timeStyles.cancelBtn}>
-                            <Text style={{ color: '#94a3b8', fontSize: 16 }}>Cancelar</Text>
+                        <TouchableOpacity onPress={onClose} style={[timeStyles.cancelBtn, { borderColor: palette.border }]}>
+                            <Text style={{ color: palette.textMuted, fontSize: 16 }}>Cancelar</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                             onPress={() => {
@@ -400,59 +402,13 @@ const timeStyles = StyleSheet.create({
     confirmBtn: { flex: 1, paddingVertical: 14, alignItems: 'center', borderRadius: 12, backgroundColor: '#2563eb' },
 });
 
-// ============================================================  
-// WEB SELECT (dark themed dropdown for web)
-// ============================================================
-function WebSelect({ value, onChange, options, placeholder, disabled }: {
-    value: any;
-    onChange: (val: any) => void;
-    options: { label: string; value: any }[];
-    placeholder: string;
-    disabled?: boolean;
-}) {
-    if (Platform.OS !== 'web') return null;
-    return (
-        <select
-            value={value ?? ''}
-            onChange={(e) => {
-                const v = e.target.value;
-                onChange(v === '' ? null : (isNaN(Number(v)) ? v : Number(v)));
-            }}
-            disabled={disabled}
-            style={{
-                width: '100%',
-                padding: '14px 12px',
-                backgroundColor: '#0f172a',
-                color: '#e2e8f0',
-                border: '1px solid #334155',
-                borderRadius: '12px',
-                fontSize: '16px',
-                fontFamily: 'sans-serif',
-                appearance: 'none',
-                WebkitAppearance: 'none',
-                cursor: disabled ? 'not-allowed' : 'pointer',
-                opacity: disabled ? 0.5 : 1,
-                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2394a3b8' viewBox='0 0 16 16'%3E%3Cpath d='M7.247 11.14L2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 01.753 1.659l-4.796 5.48a1 1 0 01-1.506 0z'/%3E%3C/svg%3E")`,
-                backgroundRepeat: 'no-repeat',
-                backgroundPosition: 'right 12px center',
-                paddingRight: '36px',
-            } as any}
-        >
-            <option value="" style={{ backgroundColor: '#1e293b', color: '#94a3b8' }}>{placeholder}</option>
-            {options.map((opt, idx) => (
-                <option key={idx} value={opt.value} style={{ backgroundColor: '#1e293b', color: '#e2e8f0' }}>
-                    {opt.label}
-                </option>
-            ))}
-        </select>
-    );
-}
-
 // ============================================================
 // COMPONENTE PRINCIPAL
 // ============================================================
 export default function NuevaCitaScreen() {
     const theme = useTheme();
+    const palette = useKyrosPalette();
+    const responsive = useResponsiveLayout();
     const router = useRouter();
     const params = useLocalSearchParams<{ fecha?: string; hora?: string }>();
 
@@ -470,6 +426,9 @@ export default function NuevaCitaScreen() {
     // Pickers State
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [showTimePicker, setShowTimePicker] = useState(false);
+    const [showServiciosPicker, setShowServiciosPicker] = useState(false);
+    const [showSucursalPicker, setShowSucursalPicker] = useState(false);
+    const [showEmpleadoPicker, setShowEmpleadoPicker] = useState(false);
 
     // Modal Nuevo Cliente
     const [modalClienteVisible, setModalClienteVisible] = useState(false);
@@ -486,18 +445,6 @@ export default function NuevaCitaScreen() {
     // Sucursal schedule
     const [schedule, setSchedule] = useState<SucursalSchedule | null>(null);
     const [errors, setErrors] = useState<{ [key: string]: string }>({});
-
-    useEffect(() => {
-        if (!appLoading) {
-            if (negocioId) {
-                loadData();
-            } else {
-                console.warn('[NuevaCita] No negocioId found after app load');
-                setLoading(false);
-                setErrors({ general: 'No se encontró información del negocio.' });
-            }
-        }
-    }, [appLoading, negocioId]);
 
     useEffect(() => {
         if (contextSucursalId) {
@@ -521,7 +468,7 @@ export default function NuevaCitaScreen() {
         fetchSchedule();
     }, [selectedSucursalId]);
 
-    const loadData = async () => {
+    const loadData = useCallback(async () => {
         setLoading(true);
         try {
             let sucursalesData: Sucursal[] = [];
@@ -562,7 +509,19 @@ export default function NuevaCitaScreen() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [rol, contextSucursalId, negocioId]);
+
+    useEffect(() => {
+        if (!appLoading) {
+            if (negocioId) {
+                loadData();
+            } else {
+                console.warn('[NuevaCita] No negocioId found after app load');
+                setLoading(false);
+                setErrors({ general: 'No se encontró información del negocio.' });
+            }
+        }
+    }, [appLoading, negocioId, loadData]);
 
     const clientesSugeridos = clienteNombre.length > 0
         ? clientes.filter(c => (c.nombre || '').toLowerCase().includes(clienteNombre.toLowerCase())).slice(0, 5)
@@ -582,6 +541,16 @@ export default function NuevaCitaScreen() {
             prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]
         );
         setErrors(prev => ({ ...prev, servicios: '' }));
+    };
+
+    const selectedSucursal = sucursales.find(s => s.id === selectedSucursalId);
+    const selectedEmpleado = empleadosFiltrados.find(e => e.id === empleadoId);
+    const selectedServiciosInfo = servicios.filter(s => selectedServiciosIds.includes(s.id));
+
+    const serviceImageUri = (servicio: Servicio) => {
+        if (!servicio.imagen_url) return null;
+        const separator = servicio.imagen_url.includes('?') ? '&' : '?';
+        return `${servicio.imagen_url}${separator}src=${encodeURIComponent(servicio.imagen_url)}`;
     };
 
     // Helper: day name in Spanish
@@ -723,7 +692,6 @@ export default function NuevaCitaScreen() {
     };
 
     // Computed values
-    const selectedServiciosInfo = servicios.filter(s => selectedServiciosIds.includes(s.id));
     const totalPrecio = selectedServiciosInfo.reduce((acc, s) => acc + (s.precio_base || 0), 0);
     const totalDuracion = selectedServiciosInfo.reduce((acc, s) => acc + (s.duracion_aprox_minutos || 30), 0);
 
@@ -731,8 +699,8 @@ export default function NuevaCitaScreen() {
         return (
             <KyrosScreen title="Nueva Cita">
                 <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                    <ActivityIndicator size="large" color="#38bdf8" />
-                    <Text style={{ textAlign: 'center', marginTop: 16, color: '#94a3b8' }}>Cargando datos...</Text>
+                    <ActivityIndicator size="large" color={theme.colors.primary} />
+                    <Text style={{ textAlign: 'center', marginTop: 16, color: palette.textMuted }}>Cargando datos...</Text>
                 </View>
             </KyrosScreen>
         );
@@ -743,7 +711,7 @@ export default function NuevaCitaScreen() {
             <KyrosScreen title="Nueva Cita">
                 <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
                     <MaterialIcons name="error-outline" size={48} color="#ef4444" />
-                    <Text style={{ marginTop: 16, textAlign: 'center', color: '#fff', fontSize: 16 }}>
+                    <Text style={{ marginTop: 16, textAlign: 'center', color: palette.text, fontSize: 16 }}>
                         {errors.general}
                     </Text>
                     <TouchableOpacity style={[styles.saveBtn, { marginTop: 20, width: 160 }]} onPress={() => router.back()}>
@@ -756,19 +724,23 @@ export default function NuevaCitaScreen() {
 
     return (
         <KyrosScreen title="Agendar Nueva Cita">
-            <ScrollView style={styles.container} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+            <ScrollView
+                style={[styles.container, { backgroundColor: palette.background, maxWidth: responsive.formMaxWidth, alignSelf: 'center' }]}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: 40 }}
+            >
 
                 {/* ═══════ Section 1: Cliente ═══════ */}
-                <View style={styles.section}>
+                <View style={[styles.section, { backgroundColor: palette.surface, borderColor: palette.borderStrong }]}>
                     <View style={styles.sectionHeader}>
-                        <MaterialIcons name="person" size={20} color="#38bdf8" />
-                        <Text style={styles.sectionTitle}>Cliente</Text>
+                        <MaterialIcons name="person" size={20} color={theme.colors.primary} />
+                        <Text style={[styles.sectionTitle, { color: palette.textStrong }]}>Cliente</Text>
                     </View>
 
                     <TextInput
                         mode="outlined"
                         placeholder="Buscar cliente..."
-                        placeholderTextColor="#64748b"
+                        placeholderTextColor={palette.textSoft}
                         value={clienteNombre}
                         onChangeText={(text) => {
                             setClienteNombre(text);
@@ -776,17 +748,17 @@ export default function NuevaCitaScreen() {
                         }}
                         error={!!errors.cliente}
                         right={clienteId ? <TextInput.Icon icon="check-circle" color="#22c55e" /> : null}
-                        style={styles.input}
-                        textColor="#e2e8f0"
-                        outlineColor="#334155"
-                        activeOutlineColor="#38bdf8"
-                        theme={{ colors: { onSurfaceVariant: '#94a3b8' } }}
+                        style={[styles.input, { backgroundColor: palette.inputBg }]}
+                        textColor={palette.text}
+                        outlineColor={palette.border}
+                        activeOutlineColor={theme.colors.primary}
+                        theme={{ colors: { onSurfaceVariant: palette.textMuted } }}
                     />
                     {errors.cliente && <Text style={styles.error}>{errors.cliente}</Text>}
 
                     {/* Suggestions */}
                     {!clienteId && clientesSugeridos.length > 0 && (
-                        <View style={styles.suggestions}>
+                        <View style={[styles.suggestions, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }]}>
                             {clientesSugeridos.map(c => (
                                 <TouchableOpacity
                                     key={c.id}
@@ -796,51 +768,88 @@ export default function NuevaCitaScreen() {
                                         setClienteNombre(c.nombre);
                                     }}
                                 >
-                                    <MaterialIcons name="person-outline" size={18} color="#38bdf8" style={{ marginRight: 8 }} />
-                                    <Text style={{ color: '#e2e8f0', flex: 1 }}>{c.nombre}</Text>
-                                    <Text style={{ color: '#64748b', fontSize: 12 }}>{c.telefono}</Text>
+                                    <MaterialIcons name="person-outline" size={18} color={theme.colors.primary} style={{ marginRight: 8 }} />
+                                    <Text style={{ color: palette.text, flex: 1 }}>{c.nombre}</Text>
+                                    <Text style={{ color: palette.textSoft, fontSize: 12 }}>{c.telefono}</Text>
                                 </TouchableOpacity>
                             ))}
                         </View>
                     )}
 
                     <TouchableOpacity
-                        style={styles.newClientBtn}
+                        style={[styles.newClientBtn, { borderColor: palette.border, backgroundColor: palette.selectedBg }]}
                         onPress={() => setModalClienteVisible(true)}
                         activeOpacity={0.7}
                     >
-                        <MaterialIcons name="person-add" size={18} color="#38bdf8" />
-                        <Text style={{ color: '#38bdf8', marginLeft: 8, fontWeight: '600' }}>¿Cliente nuevo? Registrar aquí</Text>
+                        <MaterialIcons name="person-add" size={18} color={theme.colors.primary} />
+                        <Text style={{ color: theme.colors.primary, marginLeft: 8, fontWeight: '600' }}>¿Cliente nuevo? Registrar aquí</Text>
                     </TouchableOpacity>
                 </View>
 
                 {/* ═══════ Section 2: Sucursal (Only for dueño) ═══════ */}
                 {(rol === 'dueño' || sucursales.length > 1) && (
-                    <View style={styles.section}>
+                    <View style={[styles.section, { backgroundColor: palette.surface, borderColor: palette.borderStrong }]}>
                         <View style={styles.sectionHeader}>
-                            <MaterialIcons name="store" size={20} color="#38bdf8" />
-                            <Text style={styles.sectionTitle}>Sucursal</Text>
+                            <MaterialIcons name="store" size={20} color={theme.colors.primary} />
+                            <Text style={[styles.sectionTitle, { color: palette.textStrong }]}>Sucursal</Text>
                         </View>
-                        {Platform.OS === 'web' ? (
-                            <WebSelect
-                                value={selectedSucursalId}
-                                onChange={setSelectedSucursalId}
-                                options={sucursales.map(s => ({ label: s.nombre, value: s.id }))}
-                                placeholder="Seleccionar Sucursal"
+                        <TouchableOpacity
+                            onPress={() => {
+                                setShowSucursalPicker(prev => !prev);
+                                setShowEmpleadoPicker(false);
+                                setShowServiciosPicker(false);
+                            }}
+                            activeOpacity={0.7}
+                            style={[styles.dropdownTrigger, { backgroundColor: palette.inputBg, borderColor: palette.border }]}
+                        >
+                            <Text style={[
+                                styles.dropdownTriggerText,
+                                { color: palette.text },
+                                !selectedSucursalId && styles.dropdownTriggerPlaceholder
+                            ]}>
+                                {selectedSucursal?.nombre || 'Seleccionar sucursal'}
+                            </Text>
+                            <MaterialIcons
+                                name={showSucursalPicker ? "keyboard-arrow-up" : "keyboard-arrow-down"}
+                                size={22}
+                                color={palette.textMuted}
                             />
-                        ) : (
-                            <View style={styles.pickerContainer}>
-                                <Picker
-                                    selectedValue={selectedSucursalId}
-                                    onValueChange={(val) => setSelectedSucursalId(val)}
-                                    style={{ color: '#e2e8f0' }}
-                                    dropdownIconColor="#94a3b8"
-                                >
-                                    <Picker.Item label="Seleccionar Sucursal" value={null} />
-                                    {sucursales.map(s => (
-                                        <Picker.Item key={s.id} label={s.nombre} value={s.id} />
-                                    ))}
-                                </Picker>
+                        </TouchableOpacity>
+                        {showSucursalPicker && (
+                            <View style={styles.dropdownList}>
+                                {sucursales.map(s => {
+                                    const selected = selectedSucursalId === s.id;
+                                    return (
+                                        <TouchableOpacity
+                                            key={s.id}
+                                            onPress={() => {
+                                                setSelectedSucursalId(s.id);
+                                                setShowSucursalPicker(false);
+                                                setErrors(prev => ({ ...prev, sucursal: '' }));
+                                            }}
+                                            style={[styles.dropdownItem, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }, selected && [styles.dropdownItemSelected, { borderColor: theme.colors.primary, backgroundColor: palette.selectedBg }]]}
+                                            activeOpacity={0.7}
+                                        >
+                                            <View style={styles.dropdownItemContent}>
+                                                <View style={[styles.dropdownItemIcon, { backgroundColor: palette.surface, borderColor: palette.border }, selected && [styles.dropdownItemIconSelected, { borderColor: theme.colors.primary, backgroundColor: palette.selectedBgStrong }]]}>
+                                                    <MaterialIcons
+                                                        name={selected ? "check" : "store"}
+                                                        size={18}
+                                                        color={selected ? theme.colors.primary : palette.textMuted}
+                                                    />
+                                                </View>
+                                                <Text style={[styles.dropdownItemTitle, { color: palette.text }, selected && [styles.dropdownItemTitleSelected, { color: theme.colors.primary }]]}>
+                                                    {s.nombre}
+                                                </Text>
+                                            </View>
+                                            <MaterialIcons
+                                                name={selected ? "radio-button-checked" : "radio-button-unchecked"}
+                                                size={20}
+                                                color={selected ? theme.colors.primary : palette.textSoft}
+                                            />
+                                        </TouchableOpacity>
+                                    );
+                                })}
                             </View>
                         )}
                         {errors.sucursal && <Text style={styles.error}>{errors.sucursal}</Text>}
@@ -848,51 +857,105 @@ export default function NuevaCitaScreen() {
                 )}
 
                 {/* ═══════ Section 3: Servicios ═══════ */}
-                <View style={styles.section}>
+                <View style={[styles.section, { backgroundColor: palette.surface, borderColor: palette.borderStrong }]}>
                     <View style={styles.sectionHeader}>
-                        <MaterialIcons name="content-cut" size={20} color="#38bdf8" />
-                        <Text style={styles.sectionTitle}>Servicios</Text>
+                        <MaterialIcons name="content-cut" size={20} color={theme.colors.primary} />
+                        <Text style={[styles.sectionTitle, { color: palette.textStrong }]}>Servicios</Text>
                     </View>
 
-                    <View style={styles.chipsContainer}>
-                        {servicios.map(servicio => {
-                            const selected = selectedServiciosIds.includes(servicio.id);
-                            return (
-                                <TouchableOpacity
-                                    key={servicio.id}
-                                    onPress={() => toggleServicio(servicio.id)}
-                                    style={[
-                                        styles.serviceChip,
-                                        selected && styles.serviceChipSelected
-                                    ]}
-                                    activeOpacity={0.7}
-                                >
-                                    {selected && <MaterialIcons name="check" size={16} color="#38bdf8" style={{ marginRight: 4 }} />}
-                                    <Text style={[
-                                        styles.serviceChipText,
-                                        selected && styles.serviceChipTextSelected
-                                    ]}>
-                                        {servicio.nombre} (${servicio.precio_base})
-                                    </Text>
-                                </TouchableOpacity>
-                            );
-                        })}
-                    </View>
+                    <TouchableOpacity
+                        onPress={() => {
+                            setShowServiciosPicker(prev => !prev);
+                            setShowSucursalPicker(false);
+                            setShowEmpleadoPicker(false);
+                        }}
+                        activeOpacity={0.7}
+                        style={[styles.servicesTrigger, { backgroundColor: palette.inputBg, borderColor: palette.border }]}
+                    >
+                        <Text style={[
+                            styles.servicesTriggerText,
+                            { color: palette.text },
+                            selectedServiciosIds.length === 0 && styles.servicesTriggerPlaceholder
+                        ]}>
+                            {selectedServiciosIds.length > 0
+                                ? `${selectedServiciosIds.length} servicio(s) seleccionado(s)`
+                                : 'Seleccionar servicios'}
+                        </Text>
+                        <MaterialIcons
+                            name={showServiciosPicker ? "keyboard-arrow-up" : "keyboard-arrow-down"}
+                            size={22}
+                            color={palette.textMuted}
+                        />
+                    </TouchableOpacity>
+
+                    {showServiciosPicker && (
+                        <View style={styles.servicesDropdown}>
+                            {servicios.map(servicio => {
+                                const selected = selectedServiciosIds.includes(servicio.id);
+                                return (
+                                    <TouchableOpacity
+                                        key={servicio.id}
+                                        onPress={() => toggleServicio(servicio.id)}
+                                        style={[
+                                            styles.serviceListItem,
+                                            { backgroundColor: palette.surfaceAlt, borderColor: palette.border },
+                                            selected && [styles.serviceListItemSelected, { borderColor: theme.colors.primary, backgroundColor: palette.selectedBg }]
+                                        ]}
+                                        activeOpacity={0.7}
+                                    >
+                                        <View style={styles.serviceListItemContent}>
+                                            {servicio.imagen_url ? (
+                                                <Image
+                                                    source={{ uri: serviceImageUri(servicio) || undefined }}
+                                                    style={styles.serviceListImage}
+                                                />
+                                            ) : (
+                                                <View style={[styles.serviceListIcon, { backgroundColor: palette.surface, borderColor: palette.border }, selected && [styles.serviceListIconSelected, { borderColor: theme.colors.primary, backgroundColor: palette.selectedBgStrong }]]}>
+                                                    <MaterialIcons
+                                                        name={selected ? "check" : "content-cut"}
+                                                        size={18}
+                                                        color={selected ? theme.colors.primary : palette.textMuted}
+                                                    />
+                                                </View>
+                                            )}
+                                            <View style={styles.serviceListTextBlock}>
+                                                <Text style={[
+                                                    styles.serviceListTitle,
+                                                    { color: palette.text },
+                                                    selected && [styles.serviceListTitleSelected, { color: theme.colors.primary }]
+                                                ]}>
+                                                    {servicio.nombre}
+                                                </Text>
+                                                <Text style={[styles.serviceListMeta, { color: palette.textSoft }]}>
+                                                    ${servicio.precio_base} • {servicio.duracion_aprox_minutos ?? 0} min
+                                                </Text>
+                                            </View>
+                                        </View>
+                                        <MaterialIcons
+                                            name={selected ? "check-circle" : "radio-button-unchecked"}
+                                            size={20}
+                                            color={selected ? theme.colors.primary : palette.textSoft}
+                                        />
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </View>
+                    )}
                     {errors.servicios && <Text style={styles.error}>{errors.servicios}</Text>}
 
                     {/* Summary of selected services */}
                     {selectedServiciosIds.length > 0 && (
-                        <View style={styles.summaryBox}>
+                        <View style={[styles.summaryBox, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }]}>
                             <View style={styles.summaryRow}>
-                                <Text style={styles.summaryLabel}>Servicios seleccionados</Text>
-                                <Text style={styles.summaryValue}>{selectedServiciosIds.length}</Text>
+                                <Text style={[styles.summaryLabel, { color: palette.textMuted }]}>Servicios seleccionados</Text>
+                                <Text style={[styles.summaryValue, { color: palette.text }]}>{selectedServiciosIds.length}</Text>
                             </View>
                             <View style={styles.summaryRow}>
-                                <Text style={styles.summaryLabel}>Duración estimada</Text>
-                                <Text style={styles.summaryValue}>{totalDuracion} min</Text>
+                                <Text style={[styles.summaryLabel, { color: palette.textMuted }]}>Duración estimada</Text>
+                                <Text style={[styles.summaryValue, { color: palette.text }]}>{totalDuracion} min</Text>
                             </View>
                             <View style={[styles.summaryRow, { borderBottomWidth: 0 }]}>
-                                <Text style={[styles.summaryLabel, { fontWeight: 'bold' }]}>Total</Text>
+                                <Text style={[styles.summaryLabel, { color: palette.textMuted, fontWeight: 'bold' }]}>Total</Text>
                                 <Text style={[styles.summaryValue, { color: '#22c55e', fontSize: 18 }]}>${totalPrecio}</Text>
                             </View>
                         </View>
@@ -900,53 +963,99 @@ export default function NuevaCitaScreen() {
                 </View>
 
                 {/* ═══════ Section 4: Empleado ═══════ */}
-                <View style={styles.section}>
+                <View style={[styles.section, { backgroundColor: palette.surface, borderColor: palette.borderStrong }]}>
                     <View style={styles.sectionHeader}>
-                        <MaterialIcons name="badge" size={20} color="#38bdf8" />
-                        <Text style={styles.sectionTitle}>Empleado</Text>
+                        <MaterialIcons name="badge" size={20} color={theme.colors.primary} />
+                        <Text style={[styles.sectionTitle, { color: palette.textStrong }]}>Empleado</Text>
                     </View>
-                    {Platform.OS === 'web' ? (
-                        <WebSelect
-                            value={empleadoId}
-                            onChange={setEmpleadoId}
-                            options={empleadosFiltrados.map(e => ({ label: e.nombre, value: e.id }))}
-                            placeholder={selectedSucursalId ? "Seleccionar Empleado" : "Primero selecciona sucursal"}
-                            disabled={!selectedSucursalId}
+                    <TouchableOpacity
+                        onPress={() => {
+                            if (!selectedSucursalId) return;
+                            setShowEmpleadoPicker(prev => !prev);
+                            setShowSucursalPicker(false);
+                            setShowServiciosPicker(false);
+                        }}
+                        activeOpacity={0.7}
+                        style={[
+                            styles.dropdownTrigger,
+                            { backgroundColor: palette.inputBg, borderColor: palette.border },
+                            !selectedSucursalId && styles.dropdownTriggerDisabled
+                        ]}
+                    >
+                        <Text style={[
+                            styles.dropdownTriggerText,
+                            { color: palette.text },
+                            !empleadoId && styles.dropdownTriggerPlaceholder,
+                            !selectedSucursalId && styles.dropdownTriggerPlaceholder
+                        ]}>
+                            {selectedEmpleado?.nombre || (selectedSucursalId ? 'Seleccionar empleado' : 'Primero selecciona sucursal')}
+                        </Text>
+                        <MaterialIcons
+                            name={showEmpleadoPicker ? "keyboard-arrow-up" : "keyboard-arrow-down"}
+                            size={22}
+                            color={!selectedSucursalId ? palette.disabled : palette.textMuted}
                         />
-                    ) : (
-                        <View style={styles.pickerContainer}>
-                            <Picker
-                                selectedValue={empleadoId}
-                                onValueChange={(val) => setEmpleadoId(val)}
-                                enabled={!!selectedSucursalId}
-                                style={{ color: '#e2e8f0' }}
-                                dropdownIconColor="#94a3b8"
-                            >
-                                <Picker.Item label={selectedSucursalId ? "Seleccionar Empleado" : "Primero selecciona sucursal"} value={null} />
-                                {empleadosFiltrados.map(e => (
-                                    <Picker.Item key={e.id} label={e.nombre} value={e.id} />
-                                ))}
-                            </Picker>
+                    </TouchableOpacity>
+                    {showEmpleadoPicker && selectedSucursalId && (
+                        <View style={styles.dropdownList}>
+                            {empleadosFiltrados.map(e => {
+                                const selected = empleadoId === e.id;
+                                return (
+                                    <TouchableOpacity
+                                        key={e.id}
+                                        onPress={() => {
+                                            setEmpleadoId(e.id);
+                                            setShowEmpleadoPicker(false);
+                                            setErrors(prev => ({ ...prev, empleado: '' }));
+                                        }}
+                                        style={[styles.dropdownItem, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }, selected && [styles.dropdownItemSelected, { borderColor: theme.colors.primary, backgroundColor: palette.selectedBg }]]}
+                                        activeOpacity={0.7}
+                                    >
+                                        <View style={styles.dropdownItemContent}>
+                                            <View style={[styles.dropdownItemIcon, { backgroundColor: palette.surface, borderColor: palette.border }, selected && [styles.dropdownItemIconSelected, { borderColor: theme.colors.primary, backgroundColor: palette.selectedBgStrong }]]}>
+                                                <MaterialIcons
+                                                    name={selected ? "check" : "badge"}
+                                                    size={18}
+                                                    color={selected ? theme.colors.primary : palette.textMuted}
+                                                />
+                                            </View>
+                                            <Text style={[styles.dropdownItemTitle, { color: palette.text }, selected && [styles.dropdownItemTitleSelected, { color: theme.colors.primary }]]}>
+                                                {e.nombre}
+                                            </Text>
+                                        </View>
+                                        <MaterialIcons
+                                            name={selected ? "radio-button-checked" : "radio-button-unchecked"}
+                                            size={20}
+                                            color={selected ? theme.colors.primary : palette.textSoft}
+                                        />
+                                    </TouchableOpacity>
+                                );
+                            })}
+                            {empleadosFiltrados.length === 0 && (
+                                <View style={[styles.dropdownEmpty, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }]}>
+                                    <Text style={[styles.dropdownEmptyText, { color: palette.textSoft }]}>No hay empleados disponibles</Text>
+                                </View>
+                            )}
                         </View>
                     )}
                     {errors.empleado && <Text style={styles.error}>{errors.empleado}</Text>}
                 </View>
 
                 {/* ═══════ Section 5: Fecha y Hora ═══════ */}
-                <View style={styles.section}>
+                <View style={[styles.section, { backgroundColor: palette.surface, borderColor: palette.borderStrong }]}>
                     <View style={styles.sectionHeader}>
-                        <MaterialIcons name="event" size={20} color="#38bdf8" />
-                        <Text style={styles.sectionTitle}>Fecha y Hora</Text>
+                        <MaterialIcons name="event" size={20} color={theme.colors.primary} />
+                        <Text style={[styles.sectionTitle, { color: palette.textStrong }]}>Fecha y Hora</Text>
                     </View>
 
-                    <View style={styles.dateRow}>
+                    <View style={[styles.dateRow, responsive.isCompactPhone && styles.dateRowStacked]}>
                         {/* Fecha */}
-                        <View style={{ flex: 1, marginRight: 8 }}>
-                            <Text style={styles.fieldLabel}>Fecha *</Text>
+                        <View style={{ flex: 1, marginRight: responsive.isCompactPhone ? 0 : 8, marginBottom: responsive.isCompactPhone ? 12 : 0 }}>
+                            <Text style={[styles.fieldLabel, { color: palette.textMuted }]}>Fecha *</Text>
                             <TouchableOpacity onPress={() => setShowDatePicker(true)} activeOpacity={0.7}>
-                                <View style={styles.timeInputContainer}>
-                                    <MaterialIcons name="event" size={20} color="#38bdf8" style={{ marginRight: 8 }} />
-                                    <Text style={[styles.timeInputText, !fechaSeleccionada && { color: '#64748b' }]}>
+                                <View style={[styles.timeInputContainer, { backgroundColor: palette.inputBg, borderColor: palette.border }]}>
+                                    <MaterialIcons name="event" size={20} color={theme.colors.primary} style={{ marginRight: 8 }} />
+                                    <Text style={[styles.timeInputText, { color: palette.text }, !fechaSeleccionada && { color: palette.textSoft }]}>
                                         {fechaSeleccionada ? (() => {
                                             const [y, m, d] = fechaSeleccionada.split('-');
                                             const mNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
@@ -959,12 +1068,12 @@ export default function NuevaCitaScreen() {
                         </View>
 
                         {/* Hora */}
-                        <View style={{ flex: 1, marginLeft: 8 }}>
-                            <Text style={styles.fieldLabel}>Hora Inicio *</Text>
+                        <View style={{ flex: 1, marginLeft: responsive.isCompactPhone ? 0 : 8 }}>
+                            <Text style={[styles.fieldLabel, { color: palette.textMuted }]}>Hora Inicio *</Text>
                             <TouchableOpacity onPress={() => setShowTimePicker(true)} activeOpacity={0.7}>
-                                <View style={styles.timeInputContainer}>
-                                    <MaterialIcons name="access-time" size={20} color="#38bdf8" style={{ marginRight: 8 }} />
-                                    <Text style={[styles.timeInputText, !hora && { color: '#64748b' }]}>
+                                <View style={[styles.timeInputContainer, { backgroundColor: palette.inputBg, borderColor: palette.border }]}>
+                                    <MaterialIcons name="access-time" size={20} color={theme.colors.primary} style={{ marginRight: 8 }} />
+                                    <Text style={[styles.timeInputText, { color: palette.text }, !hora && { color: palette.textSoft }]}>
                                         {hora ? (() => {
                                             const [h, m] = hora.split(':').map(Number);
                                             const ampm = h >= 12 ? 'PM' : 'AM';
@@ -978,7 +1087,7 @@ export default function NuevaCitaScreen() {
 
                             {/* Approximate end time */}
                             {hora && /^\d{1,2}:\d{2}$/.test(hora) && selectedServiciosIds.length > 0 && (
-                                <Text style={styles.endTimeHint}>
+                                <Text style={[styles.endTimeHint, { color: theme.colors.primary }]}>
                                     Fin aprox: {(() => {
                                         try {
                                             const [h, m] = hora.split(':').map(Number);
@@ -986,7 +1095,7 @@ export default function NuevaCitaScreen() {
                                             fin.setHours(h);
                                             fin.setMinutes(m + totalDuracion);
                                             return `${fin.getHours().toString().padStart(2, '0')}:${fin.getMinutes().toString().padStart(2, '0')}`;
-                                        } catch (e) { return '--:--'; }
+                                        } catch { return '--:--'; }
                                     })()}
                                 </Text>
                             )}
@@ -996,7 +1105,7 @@ export default function NuevaCitaScreen() {
 
                 {/* ═══════ Save Button ═══════ */}
                 <TouchableOpacity
-                    style={[styles.saveBtn, saving && { opacity: 0.6 }]}
+                    style={[styles.saveBtn, { backgroundColor: theme.colors.primary }, saving && { opacity: 0.6 }]}
                     onPress={handleSave}
                     disabled={saving}
                     activeOpacity={0.8}
@@ -1088,32 +1197,171 @@ const styles = StyleSheet.create({
         backgroundColor: '#0f172a',
         overflow: 'hidden',
     },
-    chipsContainer: {
+    dropdownTrigger: {
         flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 8,
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: '#0f172a',
+        borderWidth: 1,
+        borderColor: '#334155',
+        borderRadius: 12,
+        paddingHorizontal: 14,
+        paddingVertical: 14,
     },
-    serviceChip: {
+    dropdownTriggerDisabled: {
+        opacity: 0.6,
+    },
+    dropdownTriggerText: {
+        color: '#e2e8f0',
+        fontSize: 16,
+    },
+    dropdownTriggerPlaceholder: {
+        color: '#64748b',
+    },
+    dropdownList: {
+        marginTop: 10,
+        gap: 10,
+    },
+    dropdownItem: {
         flexDirection: 'row',
+        justifyContent: 'space-between',
         alignItems: 'center',
         backgroundColor: '#0f172a',
         borderWidth: 1,
         borderColor: '#334155',
-        borderRadius: 20,
+        borderRadius: 14,
         paddingHorizontal: 14,
-        paddingVertical: 8,
+        paddingVertical: 12,
     },
-    serviceChipSelected: {
+    dropdownItemSelected: {
         borderColor: '#38bdf8',
         backgroundColor: 'rgba(56, 189, 248, 0.1)',
     },
-    serviceChipText: {
+    dropdownItemContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+        marginRight: 12,
+    },
+    dropdownItemIcon: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: '#111827',
+        borderWidth: 1,
+        borderColor: '#334155',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 12,
+    },
+    dropdownItemIconSelected: {
+        borderColor: '#38bdf8',
+        backgroundColor: 'rgba(56, 189, 248, 0.12)',
+    },
+    dropdownItemTitle: {
         color: '#e2e8f0',
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    dropdownItemTitleSelected: {
+        color: '#38bdf8',
+    },
+    dropdownEmpty: {
+        backgroundColor: '#0f172a',
+        borderWidth: 1,
+        borderColor: '#334155',
+        borderRadius: 12,
+        paddingVertical: 16,
+        paddingHorizontal: 14,
+    },
+    dropdownEmptyText: {
+        color: '#64748b',
+        textAlign: 'center',
         fontSize: 13,
     },
-    serviceChipTextSelected: {
+    servicesTrigger: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: '#0f172a',
+        borderWidth: 1,
+        borderColor: '#334155',
+        borderRadius: 12,
+        paddingHorizontal: 14,
+        paddingVertical: 14,
+    },
+    servicesTriggerText: {
+        color: '#e2e8f0',
+        fontSize: 16,
+    },
+    servicesTriggerPlaceholder: {
+        color: '#64748b',
+    },
+    servicesDropdown: {
+        marginTop: 10,
+        gap: 10,
+    },
+    serviceListItem: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        backgroundColor: '#0f172a',
+        borderWidth: 1,
+        borderColor: '#334155',
+        borderRadius: 14,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+    },
+    serviceListItemSelected: {
+        borderColor: '#38bdf8',
+        backgroundColor: 'rgba(56, 189, 248, 0.1)',
+    },
+    serviceListItemContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+        marginRight: 12,
+    },
+    serviceListIcon: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: '#111827',
+        borderWidth: 1,
+        borderColor: '#334155',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 12,
+    },
+    serviceListIconSelected: {
+        borderColor: '#38bdf8',
+        backgroundColor: 'rgba(56, 189, 248, 0.12)',
+    },
+    serviceListImage: {
+        width: 36,
+        height: 36,
+        borderRadius: 10,
+        backgroundColor: '#111827',
+        borderWidth: 1,
+        borderColor: '#334155',
+        marginRight: 12,
+    },
+    serviceListTextBlock: {
+        flex: 1,
+    },
+    serviceListTitle: {
+        color: '#e2e8f0',
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    serviceListTitleSelected: {
         color: '#38bdf8',
         fontWeight: '600',
+    },
+    serviceListMeta: {
+        color: '#64748b',
+        fontSize: 12,
+        marginTop: 2,
     },
     summaryBox: {
         marginTop: 16,
@@ -1169,6 +1417,9 @@ const styles = StyleSheet.create({
     },
     dateRow: {
         flexDirection: 'row',
+    },
+    dateRowStacked: {
+        flexDirection: 'column',
     },
     timeInputContainer: {
         flexDirection: 'row',

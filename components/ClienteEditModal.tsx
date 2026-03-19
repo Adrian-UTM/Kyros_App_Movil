@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Alert, Modal, TouchableOpacity, ScrollView } from 'react-native';
-import { Text, TextInput, HelperText, ActivityIndicator } from 'react-native-paper';
+import { Text, TextInput, HelperText, ActivityIndicator, useTheme } from 'react-native-paper';
 import { MaterialIcons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabaseClient';
 import { safeAction } from '../lib/safeAction';
+import { useKyrosPalette } from '../lib/useKyrosPalette';
+import { useResponsiveLayout } from '../lib/useResponsiveLayout';
 
 interface Cliente {
     id: number;
@@ -20,6 +22,9 @@ interface ClienteEditModalProps {
 }
 
 export default function ClienteEditModal({ visible, cliente, negocioId, onDismiss, onClienteActualizado }: ClienteEditModalProps) {
+    const theme = useTheme();
+    const palette = useKyrosPalette();
+    const responsive = useResponsiveLayout();
     const [nombre, setNombre] = useState('');
     const [telefono, setTelefono] = useState('');
     const [loading, setLoading] = useState(false);
@@ -87,23 +92,23 @@ export default function ClienteEditModal({ visible, cliente, negocioId, onDismis
 
     return (
         <Modal visible={visible} transparent animationType="slide" onRequestClose={onDismiss}>
-            <View style={styles.overlay}>
-                <View style={styles.modal}>
+            <View style={[styles.overlay, { backgroundColor: palette.overlay }]}>
+                <View style={[styles.modal, { backgroundColor: palette.surface, borderColor: palette.borderStrong, width: '100%', maxWidth: responsive.modalMaxWidth, alignSelf: 'center' }]}>
                     <ScrollView showsVerticalScrollIndicator={false}>
                         {/* Header */}
                         <View style={styles.header}>
-                            <View style={styles.headerIcon}>
-                                <MaterialIcons name="edit" size={28} color="#38bdf8" />
+                            <View style={[styles.headerIcon, { backgroundColor: palette.selectedBg }]}>
+                                <MaterialIcons name="edit" size={28} color={theme.colors.primary} />
                             </View>
-                            <Text style={styles.title}>Editar Cliente</Text>
-                            <Text style={styles.subtitle}>Modifica los datos del cliente</Text>
+                            <Text style={[styles.title, { color: palette.textStrong }]}>Editar Cliente</Text>
+                            <Text style={[styles.subtitle, { color: palette.textSoft }]}>Modifica los datos del cliente</Text>
                         </View>
 
                         {/* Form */}
                         <View style={styles.section}>
                             <View style={styles.sectionHeader}>
-                                <MaterialIcons name="person" size={18} color="#38bdf8" />
-                                <Text style={styles.sectionTitle}>Información</Text>
+                                <MaterialIcons name="person" size={18} color={theme.colors.primary} />
+                                <Text style={[styles.sectionTitle, { color: palette.textMuted }]}>Información</Text>
                             </View>
 
                             <TextInput
@@ -112,11 +117,11 @@ export default function ClienteEditModal({ visible, cliente, negocioId, onDismis
                                 onChangeText={handleNombreChange}
                                 mode="outlined"
                                 error={!!errors.nombre}
-                                style={styles.input}
-                                textColor="#e2e8f0"
-                                outlineColor="#334155"
-                                activeOutlineColor="#38bdf8"
-                                theme={{ colors: { onSurfaceVariant: '#94a3b8' } }}
+                                style={[styles.input, { backgroundColor: palette.inputBg }]}
+                                textColor={palette.text}
+                                outlineColor={palette.border}
+                                activeOutlineColor={theme.colors.primary}
+                                theme={{ colors: { onSurfaceVariant: palette.textMuted } }}
                             />
                             {errors.nombre && <HelperText type="error" visible>{errors.nombre}</HelperText>}
 
@@ -127,24 +132,24 @@ export default function ClienteEditModal({ visible, cliente, negocioId, onDismis
                                 mode="outlined"
                                 keyboardType="phone-pad"
                                 error={!!errors.telefono}
-                                style={styles.input}
-                                textColor="#e2e8f0"
-                                outlineColor="#334155"
-                                activeOutlineColor="#38bdf8"
-                                theme={{ colors: { onSurfaceVariant: '#94a3b8' } }}
+                                style={[styles.input, { backgroundColor: palette.inputBg }]}
+                                textColor={palette.text}
+                                outlineColor={palette.border}
+                                activeOutlineColor={theme.colors.primary}
+                                theme={{ colors: { onSurfaceVariant: palette.textMuted } }}
                             />
                             {errors.telefono && <HelperText type="error" visible>{errors.telefono}</HelperText>}
                         </View>
 
                         {/* Actions */}
                         <View style={styles.actions}>
-                            <TouchableOpacity onPress={onDismiss} disabled={loading} style={styles.cancelBtn}>
-                                <Text style={{ color: '#94a3b8', fontSize: 16, fontWeight: '600' }}>Cancelar</Text>
+                            <TouchableOpacity onPress={onDismiss} disabled={loading} style={[styles.cancelBtn, { borderColor: palette.border }]}>
+                                <Text style={{ color: palette.textMuted, fontSize: 16, fontWeight: '600' }}>Cancelar</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                                 onPress={handleSave}
                                 disabled={loading}
-                                style={[styles.saveBtn, loading && { opacity: 0.5 }]}
+                                style={[styles.saveBtn, { backgroundColor: theme.colors.primary }, loading && { opacity: 0.5 }]}
                             >
                                 {loading ? (
                                     <ActivityIndicator color="#fff" size="small" />

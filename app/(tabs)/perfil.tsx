@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, Alert, TouchableOpacity, Dimensions, Modal as RNModal, TouchableWithoutFeedback } from 'react-native';
+import { View, StyleSheet, ScrollView, Alert, TouchableOpacity, Dimensions, Modal as RNModal, TouchableWithoutFeedback, ActivityIndicator, Linking } from 'react-native';
 import { Text, Avatar, List, useTheme, Divider, Switch, TextInput } from 'react-native-paper';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Session } from '../../lib/session';
 import KyrosScreen from '../../components/KyrosScreen';
 import KyrosCard from '../../components/KyrosCard';
@@ -12,10 +12,21 @@ import { safeAction } from '../../lib/safeAction';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import QRCode from 'react-native-qrcode-svg';
+import { useKyrosPalette } from '../../lib/useKyrosPalette';
+import { getEndOfDayLocal, getLocalToday, getStartOfDayLocal } from '../../lib/date';
+
+const WEEKDAYS = [1, 2, 3, 4, 5];
+const WEEKEND_DAYS = [6, 0];
+const DAY_LABELS = [
+    { val: 1, lab: 'Lunes' }, { val: 2, lab: 'Martes' }, { val: 3, lab: 'Miércoles' },
+    { val: 4, lab: 'Jueves' }, { val: 5, lab: 'Viernes' }
+];
+const WEEKEND_LABELS = [{ val: 6, lab: 'Sábado' }, { val: 0, lab: 'Domingo' }];
 
 export default function PerfilScreen() {
     const router = useRouter();
     const theme = useTheme();
+    const palette = useKyrosPalette();
     const { rol, negocioId, sucursalId, themeMode, toggleTheme } = useApp();
     const [loading, setLoading] = useState(false);
     const [user, setUser] = useState<{ name: string; email: string; avatar_url?: string } | null>(null);
@@ -42,18 +53,14 @@ export default function PerfilScreen() {
     const [savingSchedule, setSavingSchedule] = useState(false);
     const [timePickerVisible, setTimePickerVisible] = useState(false);
     const [timePickerField, setTimePickerField] = useState<keyof typeof schedule | null>(null);
-
-    // Revenue state for sucursal
-    const [revenueToday, setRevenueToday] = useState(0);
-    const [loadingStats, setLoadingStats] = useState(false);
-
-    const weekdays = [1, 2, 3, 4, 5];
-    const weekendDays = [6, 0];
-    const dayLabels = [
-        { val: 1, lab: 'Lunes' }, { val: 2, lab: 'Martes' }, { val: 3, lab: 'Miércoles' },
-        { val: 4, lab: 'Jueves' }, { val: 5, lab: 'Viernes' }
-    ];
-    const wkndLabels = [{ val: 6, lab: 'Sábado' }, { val: 0, lab: 'Domingo' }];
+    const [ownerStatsLoading, setOwnerStatsLoading] = useState(false);
+    const [ownerStats, setOwnerStats] = useState({
+        sucursales: null as number | null,
+        empleados: null as number | null,
+        servicios: null as number | null,
+        citasHoy: null as number | null,
+        ingresosMes: null as number | null,
+    });
 
     useEffect(() => {
         const fetchUser = async () => {
@@ -78,50 +85,78 @@ export default function PerfilScreen() {
         fetchUser();
     }, []);
 
-    useEffect(() => {
-        if (rol === 'sucursal' && sucursalId) {
-            loadBranchData();
-            loadRevenueToday();
-        } else if (rol === 'dueño' && negocioId) {
-            loadBusinessData();
-        }
-    }, [rol, sucursalId, negocioId]);
-
-    const loadRevenueToday = async () => {
-        if (!sucursalId) return;
-        setLoadingStats(true);
-        try {
-            const now = new Date();
-            const startStr = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
-            const endStr = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).toISOString();
-
-            const { data, error } = await supabase
-                .from('citas')
-                .select('total_pagado, monto_total')
-                .eq('sucursal_id', sucursalId)
-                .eq('estado', 'completada')
-                .gte('fecha_completado', startStr)
-                .lte('fecha_completado', endStr);
-
-            if (error) throw error;
-
-            const total = (data || []).reduce((sum, cita) => sum + (cita.total_pagado || cita.monto_total || 0), 0);
-            setRevenueToday(total);
-        } catch (err) {
-            console.error('Error loading revenue today:', err);
-        } finally {
-            setLoadingStats(false);
-        }
-    };
-
-    const loadBusinessData = async () => {
+    const loadBusinessData = React.useCallback(async () => {
         try {
             const { data } = await supabase.from('negocios').select('nombre').eq('id', negocioId).single();
             if (data) setNegocioNombre(data.nombre);
         } catch (err) {
             console.error('Error loading business data:', err);
         }
-    };
+    }, [negocioId]);
+
+    const loadOwnerStats = React.useCallback(async () => {
+        if (rol !== 'dueño' || !negocioId) return;
+
+        setOwnerStatsLoading(true);
+        try {
+            const today = getLocalToday();
+            const startOfToday = getStartOfDayLocal(today);
+            const endOfToday = getEndOfDayLocal(today);
+            const [year, month] = today.split('-').map(Number);
+            const startOfMonth = new Date(year, month - 1, 1, 0, 0, 0, 0).toISOString();
+            const endOfMonth = new Date(year, month, 0, 23, 59, 59, 999).toISOString();
+
+            const [
+                sucursalesRes,
+                empleadosRes,
+                serviciosRes,
+                citasHoyRes,
+                ingresosMesRes,
+            ] = await Promise.all([
+                supabase.from('sucursales').select('*', { count: 'exact', head: true }).eq('negocio_id', negocioId),
+                supabase.from('empleados').select('*', { count: 'exact', head: true }).eq('negocio_id', negocioId),
+                supabase.from('servicios').select('*', { count: 'exact', head: true }).eq('negocio_id', negocioId),
+                supabase
+                    .from('citas')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('negocio_id', negocioId)
+                    .gte('fecha_hora_inicio', startOfToday)
+                    .lte('fecha_hora_inicio', endOfToday)
+                    .neq('estado', 'cancelada'),
+                supabase
+                    .from('citas')
+                    .select('total_pagado, monto_total')
+                    .eq('negocio_id', negocioId)
+                    .eq('estado', 'completada')
+                    .gte('fecha_completado', startOfMonth)
+                    .lte('fecha_completado', endOfMonth),
+            ]);
+
+            const ingresosMes = (ingresosMesRes.data || []).reduce(
+                (sum, cita: any) => sum + (cita.total_pagado || cita.monto_total || 0),
+                0
+            );
+
+            setOwnerStats({
+                sucursales: sucursalesRes.count ?? 0,
+                empleados: empleadosRes.count ?? 0,
+                servicios: serviciosRes.count ?? 0,
+                citasHoy: citasHoyRes.count ?? 0,
+                ingresosMes,
+            });
+        } catch (err) {
+            console.error('Error loading owner stats:', err);
+            setOwnerStats({
+                sucursales: null,
+                empleados: null,
+                servicios: null,
+                citasHoy: null,
+                ingresosMes: null,
+            });
+        } finally {
+            setOwnerStatsLoading(false);
+        }
+    }, [rol, negocioId]);
 
     const calculateEndTime = (start: string, duration: number) => {
         if (!start) return '';
@@ -141,7 +176,7 @@ export default function PerfilScreen() {
         return diff;
     };
 
-    const loadBranchData = async () => {
+    const loadBranchData = React.useCallback(async () => {
         try {
             // Load Sucursal Data
             const { data: suc } = await supabase
@@ -165,11 +200,11 @@ export default function PerfilScreen() {
             if (horarios && horarios.length > 0) {
                 const wDays: number[] = [];
                 const wEnd: number[] = [];
-                let weekdayRef = horarios.find(h => weekdays.includes(h.dia_semana));
-                let weekendRef = horarios.find(h => weekendDays.includes(h.dia_semana));
+                let weekdayRef = horarios.find(h => WEEKDAYS.includes(h.dia_semana));
+                let weekendRef = horarios.find(h => WEEKEND_DAYS.includes(h.dia_semana));
 
                 horarios.forEach(h => {
-                    if (weekdays.includes(h.dia_semana)) wDays.push(h.dia_semana);
+                    if (WEEKDAYS.includes(h.dia_semana)) wDays.push(h.dia_semana);
                     else wEnd.push(h.dia_semana);
                 });
 
@@ -190,7 +225,27 @@ export default function PerfilScreen() {
         } catch (err) {
             console.error('Error loading branch data:', err);
         }
-    };
+    }, [sucursalId]);
+
+    useEffect(() => {
+        if (rol === 'sucursal' && sucursalId) {
+            loadBranchData();
+        } else if (rol === 'dueño' && negocioId) {
+            loadBusinessData();
+            loadOwnerStats();
+        }
+    }, [rol, sucursalId, negocioId, loadBranchData, loadBusinessData, loadOwnerStats]);
+
+    useFocusEffect(
+        React.useCallback(() => {
+            if (rol === 'sucursal' && sucursalId) {
+                loadBranchData();
+            } else if (rol === 'dueño' && negocioId) {
+                loadBusinessData();
+                loadOwnerStats();
+            }
+        }, [rol, sucursalId, negocioId, loadBranchData, loadBusinessData, loadOwnerStats])
+    );
 
     const toggleDay = (day: number, isWeekend: boolean) => {
         if (isWeekend) {
@@ -311,7 +366,7 @@ export default function PerfilScreen() {
             const response = await fetch(asset.uri);
             const blob = await response.blob();
 
-            const { data, error } = await supabase.storage
+            const { error } = await supabase.storage
                 .from('avatars')
                 .upload(fileName, blob, {
                     contentType: `image/${ext}`,
@@ -366,14 +421,22 @@ export default function PerfilScreen() {
         setTimePickerVisible(true);
     };
 
+    const handleOpenNotificationSettings = async () => {
+        try {
+            await Linking.openSettings();
+        } catch {
+            Alert.alert('Notificaciones', 'Abre los ajustes del dispositivo para administrar los permisos de Kyros.');
+        }
+    };
+
     return (
         <>
             <KyrosScreen title={rol === 'sucursal' ? 'Mi Sucursal' : 'Mi Perfil'}>
-            <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+            <ScrollView style={[styles.container, { backgroundColor: palette.background }]} contentContainerStyle={styles.contentContainer}>
 
                 {/* SUCRUSAL ONLY: HEADER WITH QR */}
                 {rol === 'sucursal' ? (
-                    <View style={styles.branchHeaderContainer}>
+                    <View style={[styles.branchHeaderContainer, { backgroundColor: palette.background }]}>
                         <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-start', gap: 32, marginBottom: 8 }}>
                             <View style={styles.avatarSection}>
                                 <TouchableOpacity onPress={pickImage} disabled={loading} style={styles.avatarWrapper}>
@@ -382,21 +445,21 @@ export default function PerfilScreen() {
                                     ) : (
                                         <Avatar.Text size={90} label={user ? getInitials(user.name) : 'US'} style={{ backgroundColor: theme.colors.primary }} color={theme.colors.onPrimary} />
                                     )}
-                                    <View style={styles.editBadge}>
+                                    <View style={[styles.editBadge, { backgroundColor: palette.surface, borderColor: palette.background }]}>
                                         <MaterialIcons name="edit" size={14} color="#fff" />
                                     </View>
                                 </TouchableOpacity>
                             </View>
 
                             <View style={styles.qrSection}>
-                                <TouchableOpacity onPress={() => setQrModalVisible(true)} style={[styles.qrBox, { borderColor: theme.colors.outline }]}>
+                                <TouchableOpacity onPress={() => setQrModalVisible(true)} style={[styles.qrBox, { borderColor: palette.borderStrong, backgroundColor: palette.surface }]}>
                                     <QRCode value={`https://kyrosapp.com/agendar/${sucursalId}`} size={70} />
                                 </TouchableOpacity>
-                                <Text style={{ fontSize: 10, color: '#888', marginTop: 6 }}>Escanea para agendar</Text>
+                                <Text style={{ fontSize: 10, color: palette.textSoft, marginTop: 6 }}>Escanea para agendar</Text>
                             </View>
                         </View>
 
-                        <Text variant="headlineSmall" style={{ fontWeight: 'bold', color: theme.colors.onSurface, marginVertical: 20, textAlign: 'center' }}>
+                        <Text variant="headlineSmall" style={{ fontWeight: 'bold', color: palette.textStrong, marginVertical: 20, textAlign: 'center' }}>
                             Mi Sucursal
                         </Text>
 
@@ -406,19 +469,19 @@ export default function PerfilScreen() {
                                 value={nombreSucursal}
                                 onChangeText={setNombreSucursal}
                                 mode="outlined"
-                                style={[styles.input, { backgroundColor: theme.colors.surface }]}
-                                outlineColor={theme.colors.outline}
+                                style={[styles.input, { backgroundColor: palette.inputBg }]}
+                                outlineColor={palette.border}
                                 activeOutlineColor={theme.colors.primary}
-                                textColor={theme.colors.onSurface}
+                                textColor={palette.text}
                             />
                             <TextInput
                                 label="Negocio"
                                 value={negocioNombre}
                                 editable={false}
                                 mode="outlined"
-                                style={[styles.input, { backgroundColor: 'rgba(255,255,255,0.05)' }]}
-                                outlineColor={theme.colors.outline}
-                                textColor={theme.colors.onSurfaceVariant}
+                                style={[styles.input, { backgroundColor: palette.surfaceAlt }]}
+                                outlineColor={palette.border}
+                                textColor={palette.textMuted}
                             />
                             <TextInput
                                 label="Teléfono de la Sucursal"
@@ -426,41 +489,15 @@ export default function PerfilScreen() {
                                 onChangeText={setTelefonoSucursal}
                                 mode="outlined"
                                 keyboardType="phone-pad"
-                                style={[styles.input, { backgroundColor: theme.colors.surface }]}
-                                outlineColor={theme.colors.outline}
+                                style={[styles.input, { backgroundColor: palette.inputBg }]}
+                                outlineColor={palette.border}
                                 activeOutlineColor={theme.colors.primary}
-                                textColor={theme.colors.onSurface}
-                                right={<TextInput.Icon icon="phone" color={theme.colors.onSurfaceVariant} />}
+                                textColor={palette.text}
+                                right={<TextInput.Icon icon="phone" color={palette.textMuted} />}
                             />
-                            <KyrosButton mode="outlined" onPress={handleSaveBranch} loading={savingBranch} disabled={savingBranch} style={{ marginTop: 12, alignSelf: 'flex-end', borderColor: theme.colors.outline }}>
+                            <KyrosButton mode="outlined" onPress={handleSaveBranch} loading={savingBranch} disabled={savingBranch} style={{ marginTop: 12, alignSelf: 'flex-end', borderColor: palette.borderStrong }}>
                                 Guardar Cambios
                             </KyrosButton>
-                        </KyrosCard>
-
-                        {/* INGRESOS CARD */}
-                        <KyrosCard style={{ marginTop: 16 }}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                    <View style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', padding: 10, borderRadius: 12, marginRight: 12 }}>
-                                        <MaterialIcons name="payments" size={24} color="#10b981" />
-                                    </View>
-                                    <View>
-                                        <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 13, textTransform: 'uppercase', fontWeight: 'bold' }}>Ingresos de Hoy</Text>
-                                        <Text style={{ color: theme.colors.onSurface, fontSize: 24, fontWeight: 'bold' }}>${revenueToday.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</Text>
-                                    </View>
-                                </View>
-                                <TouchableOpacity 
-                                    onPress={() => loadRevenueToday()} 
-                                    disabled={loadingStats}
-                                    style={{ padding: 8 }}
-                                >
-                                    <MaterialIcons 
-                                        name="refresh" 
-                                        size={20} 
-                                        color={loadingStats ? '#475569' : theme.colors.primary} 
-                                    />
-                                </TouchableOpacity>
-                            </View>
                         </KyrosCard>
                     </View>
                 ) : (
@@ -520,15 +557,49 @@ export default function PerfilScreen() {
                                 </>
                             )}
                         </KyrosCard>
+
+                        {rol === 'dueño' && (
+                            <KyrosCard title="Resumen del Negocio">
+                                {ownerStatsLoading ? (
+                                    <ActivityIndicator style={{ marginVertical: 18 }} color={theme.colors.primary} />
+                                ) : (
+                                    <>
+                                        <View style={styles.ownerStatsGrid}>
+                                            {[
+                                                { label: 'Sucursales', value: ownerStats.sucursales, icon: 'storefront', tone: palette.infoText },
+                                                { label: 'Equipo', value: ownerStats.empleados, icon: 'badge', tone: palette.successText },
+                                                { label: 'Servicios', value: ownerStats.servicios, icon: 'content-cut', tone: palette.warningText },
+                                                { label: 'Citas Hoy', value: ownerStats.citasHoy, icon: 'calendar-today', tone: palette.primary },
+                                            ].map((item) => (
+                                                <View key={item.label} style={[styles.ownerStatCard, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }]}>
+                                                    <MaterialIcons name={item.icon as any} size={20} color={item.tone} />
+                                                    <Text style={[styles.ownerStatValue, { color: palette.textStrong }]}>
+                                                        {item.value ?? 'Sin datos'}
+                                                    </Text>
+                                                    <Text style={[styles.ownerStatLabel, { color: palette.textMuted }]}>{item.label}</Text>
+                                                </View>
+                                            ))}
+                                        </View>
+
+                                        <View style={[styles.ownerRevenueCard, { backgroundColor: palette.surfaceRaised, borderColor: palette.borderStrong }]}>
+                                            <Text style={[styles.ownerRevenueLabel, { color: palette.textMuted }]}>Ingresos del mes</Text>
+                                            <Text style={[styles.ownerRevenueValue, { color: ownerStats.ingresosMes === null ? palette.textSoft : palette.successText }]}>
+                                                {ownerStats.ingresosMes === null ? 'Sin datos aún' : `$${ownerStats.ingresosMes}`}
+                                            </Text>
+                                        </View>
+                                    </>
+                                )}
+                            </KyrosCard>
+                        )}
                     </>
                 )}
 
                 {/* SUCRUSAL ONLY: SCHEDULE CONFIGURATION */}
                 {rol === 'sucursal' && (
                     <KyrosCard title="Horarios de la Sucursal">
-                        <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>Días Laborables (Lunes - Viernes)</Text>
+                        <Text style={[styles.sectionTitle, { color: palette.textStrong }]}>Días Laborables (Lunes - Viernes)</Text>
                         <View style={styles.webDaysRow}>
-                            {dayLabels.map(d => (
+                        {DAY_LABELS.map(d => (
                                 <TouchableOpacity
                                     key={d.val}
                                     style={styles.webCheckbox}
@@ -539,26 +610,26 @@ export default function PerfilScreen() {
                                         size={22}
                                         color={weekdaysActive.includes(d.val) ? theme.colors.primary : theme.colors.onSurfaceVariant}
                                     />
-                                    <Text style={{ color: theme.colors.onSurface, marginLeft: 6, fontSize: 14 }}>{d.lab}</Text>
+                                    <Text style={{ color: palette.text, marginLeft: 6, fontSize: 14 }}>{d.lab}</Text>
                                 </TouchableOpacity>
                             ))}
                         </View>
                         <View style={styles.row}>
                             <View style={styles.halfInput}>
-                                <Text style={styles.fieldLabel}>Apertura</Text>
-                                <TouchableOpacity onPress={() => openTimePicker('weekday_open')} style={[styles.timeInputContainer, { backgroundColor: theme.colors.surface }]} activeOpacity={0.7}>
+                                <Text style={[styles.fieldLabel, { color: palette.textMuted }]}>Apertura</Text>
+                                <TouchableOpacity onPress={() => openTimePicker('weekday_open')} style={[styles.timeInputContainer, { backgroundColor: palette.inputBg, borderColor: palette.border }]} activeOpacity={0.7}>
                                     <MaterialIcons name="access-time" size={20} color="#38bdf8" style={{ marginRight: 8 }} />
-                                    <Text style={[styles.timeInputText, !schedule.weekday_open && { color: '#64748b' }]}>
+                                    <Text style={[styles.timeInputText, { color: palette.text }, !schedule.weekday_open && { color: palette.textSoft }]}>
                                         {schedule.weekday_open ? displayTimeFrom24(schedule.weekday_open) : '09:00 AM'}
                                     </Text>
                                 </TouchableOpacity>
                             </View>
 
                             <View style={styles.halfInput}>
-                                <Text style={styles.fieldLabel}>Cierre</Text>
-                                <TouchableOpacity onPress={() => openTimePicker('weekday_close')} style={[styles.timeInputContainer, { backgroundColor: theme.colors.surface }]} activeOpacity={0.7}>
+                                <Text style={[styles.fieldLabel, { color: palette.textMuted }]}>Cierre</Text>
+                                <TouchableOpacity onPress={() => openTimePicker('weekday_close')} style={[styles.timeInputContainer, { backgroundColor: palette.inputBg, borderColor: palette.border }]} activeOpacity={0.7}>
                                     <MaterialIcons name="access-time" size={20} color="#38bdf8" style={{ marginRight: 8 }} />
-                                    <Text style={[styles.timeInputText, !schedule.weekday_close && { color: '#64748b' }]}>
+                                    <Text style={[styles.timeInputText, { color: palette.text }, !schedule.weekday_close && { color: palette.textSoft }]}>
                                         {schedule.weekday_close ? displayTimeFrom24(schedule.weekday_close) : '08:00 PM'}
                                     </Text>
                                 </TouchableOpacity>
@@ -566,20 +637,20 @@ export default function PerfilScreen() {
                         </View>
                         <View style={styles.row}>
                             <View style={styles.halfInput}>
-                                <Text style={styles.fieldLabel}>Inicio Descanso</Text>
-                                <TouchableOpacity onPress={() => openTimePicker('weekday_break_start')} style={[styles.timeInputContainer, { backgroundColor: theme.colors.surface }]} activeOpacity={0.7}>
+                                <Text style={[styles.fieldLabel, { color: palette.textMuted }]}>Inicio Descanso</Text>
+                                <TouchableOpacity onPress={() => openTimePicker('weekday_break_start')} style={[styles.timeInputContainer, { backgroundColor: palette.inputBg, borderColor: palette.border }]} activeOpacity={0.7}>
                                     <MaterialIcons name="access-time" size={20} color="#38bdf8" style={{ marginRight: 8 }} />
-                                    <Text style={[styles.timeInputText, !schedule.weekday_break_start && { color: '#64748b' }]}>
+                                    <Text style={[styles.timeInputText, { color: palette.text }, !schedule.weekday_break_start && { color: palette.textSoft }]}>
                                         {schedule.weekday_break_start ? displayTimeFrom24(schedule.weekday_break_start) : 'Ninguno'}
                                     </Text>
                                 </TouchableOpacity>
                             </View>
 
                             <View style={styles.halfInput}>
-                                <Text style={styles.fieldLabel}>Fin Descanso</Text>
-                                <TouchableOpacity onPress={() => openTimePicker('weekday_break_end')} style={[styles.timeInputContainer, { backgroundColor: theme.colors.surface }]} activeOpacity={0.7}>
+                                <Text style={[styles.fieldLabel, { color: palette.textMuted }]}>Fin Descanso</Text>
+                                <TouchableOpacity onPress={() => openTimePicker('weekday_break_end')} style={[styles.timeInputContainer, { backgroundColor: palette.inputBg, borderColor: palette.border }]} activeOpacity={0.7}>
                                     <MaterialIcons name="access-time" size={20} color="#38bdf8" style={{ marginRight: 8 }} />
-                                    <Text style={[styles.timeInputText, !schedule.weekday_break_end && { color: '#64748b' }]}>
+                                    <Text style={[styles.timeInputText, { color: palette.text }, !schedule.weekday_break_end && { color: palette.textSoft }]}>
                                         {schedule.weekday_break_end ? displayTimeFrom24(schedule.weekday_break_end) : 'Ninguno'}
                                     </Text>
                                 </TouchableOpacity>
@@ -588,9 +659,9 @@ export default function PerfilScreen() {
 
                         <Divider style={{ marginVertical: 16 }} />
 
-                        <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>Fin de Semana</Text>
+                        <Text style={[styles.sectionTitle, { color: palette.textStrong }]}>Fin de Semana</Text>
                         <View style={styles.webDaysRow}>
-                            {wkndLabels.map(d => (
+                        {WEEKEND_LABELS.map(d => (
                                 <TouchableOpacity
                                     key={d.val}
                                     style={styles.webCheckbox}
@@ -601,26 +672,26 @@ export default function PerfilScreen() {
                                         size={22}
                                         color={weekendActive.includes(d.val) ? theme.colors.primary : theme.colors.onSurfaceVariant}
                                     />
-                                    <Text style={{ color: theme.colors.onSurface, marginLeft: 6, fontSize: 14 }}>{d.lab}</Text>
+                                    <Text style={{ color: palette.text, marginLeft: 6, fontSize: 14 }}>{d.lab}</Text>
                                 </TouchableOpacity>
                             ))}
                         </View>
                         <View style={styles.row}>
                             <View style={styles.halfInput}>
-                                <Text style={styles.fieldLabel}>Apertura</Text>
-                                <TouchableOpacity onPress={() => openTimePicker('weekend_open')} style={[styles.timeInputContainer, { backgroundColor: theme.colors.surface }]} activeOpacity={0.7}>
+                                <Text style={[styles.fieldLabel, { color: palette.textMuted }]}>Apertura</Text>
+                                <TouchableOpacity onPress={() => openTimePicker('weekend_open')} style={[styles.timeInputContainer, { backgroundColor: palette.inputBg, borderColor: palette.border }]} activeOpacity={0.7}>
                                     <MaterialIcons name="access-time" size={20} color="#38bdf8" style={{ marginRight: 8 }} />
-                                    <Text style={[styles.timeInputText, !schedule.weekend_open && { color: '#64748b' }]}>
+                                    <Text style={[styles.timeInputText, { color: palette.text }, !schedule.weekend_open && { color: palette.textSoft }]}>
                                         {schedule.weekend_open ? displayTimeFrom24(schedule.weekend_open) : '10:00 AM'}
                                     </Text>
                                 </TouchableOpacity>
                             </View>
 
                             <View style={styles.halfInput}>
-                                <Text style={styles.fieldLabel}>Cierre</Text>
-                                <TouchableOpacity onPress={() => openTimePicker('weekend_close')} style={[styles.timeInputContainer, { backgroundColor: theme.colors.surface }]} activeOpacity={0.7}>
+                                <Text style={[styles.fieldLabel, { color: palette.textMuted }]}>Cierre</Text>
+                                <TouchableOpacity onPress={() => openTimePicker('weekend_close')} style={[styles.timeInputContainer, { backgroundColor: palette.inputBg, borderColor: palette.border }]} activeOpacity={0.7}>
                                     <MaterialIcons name="access-time" size={20} color="#38bdf8" style={{ marginRight: 8 }} />
-                                    <Text style={[styles.timeInputText, !schedule.weekend_close && { color: '#64748b' }]}>
+                                    <Text style={[styles.timeInputText, { color: palette.text }, !schedule.weekend_close && { color: palette.textSoft }]}>
                                         {schedule.weekend_close ? displayTimeFrom24(schedule.weekend_close) : '06:00 PM'}
                                     </Text>
                                 </TouchableOpacity>
@@ -628,20 +699,20 @@ export default function PerfilScreen() {
                         </View>
                         <View style={styles.row}>
                             <View style={styles.halfInput}>
-                                <Text style={styles.fieldLabel}>Inicio Descanso</Text>
-                                <TouchableOpacity onPress={() => openTimePicker('weekend_break_start')} style={[styles.timeInputContainer, { backgroundColor: theme.colors.surface }]} activeOpacity={0.7}>
+                                <Text style={[styles.fieldLabel, { color: palette.textMuted }]}>Inicio Descanso</Text>
+                                <TouchableOpacity onPress={() => openTimePicker('weekend_break_start')} style={[styles.timeInputContainer, { backgroundColor: palette.inputBg, borderColor: palette.border }]} activeOpacity={0.7}>
                                     <MaterialIcons name="access-time" size={20} color="#38bdf8" style={{ marginRight: 8 }} />
-                                    <Text style={[styles.timeInputText, !schedule.weekend_break_start && { color: '#64748b' }]}>
+                                    <Text style={[styles.timeInputText, { color: palette.text }, !schedule.weekend_break_start && { color: palette.textSoft }]}>
                                         {schedule.weekend_break_start ? displayTimeFrom24(schedule.weekend_break_start) : 'Ninguno'}
                                     </Text>
                                 </TouchableOpacity>
                             </View>
 
                             <View style={styles.halfInput}>
-                                <Text style={styles.fieldLabel}>Fin Descanso</Text>
-                                <TouchableOpacity onPress={() => openTimePicker('weekend_break_end')} style={[styles.timeInputContainer, { backgroundColor: theme.colors.surface }]} activeOpacity={0.7}>
+                                <Text style={[styles.fieldLabel, { color: palette.textMuted }]}>Fin Descanso</Text>
+                                <TouchableOpacity onPress={() => openTimePicker('weekend_break_end')} style={[styles.timeInputContainer, { backgroundColor: palette.inputBg, borderColor: palette.border }]} activeOpacity={0.7}>
                                     <MaterialIcons name="access-time" size={20} color="#38bdf8" style={{ marginRight: 8 }} />
-                                    <Text style={[styles.timeInputText, !schedule.weekend_break_end && { color: '#64748b' }]}>
+                                    <Text style={[styles.timeInputText, { color: palette.text }, !schedule.weekend_break_end && { color: palette.textSoft }]}>
                                         {schedule.weekend_break_end ? displayTimeFrom24(schedule.weekend_break_end) : 'Ninguno'}
                                     </Text>
                                 </TouchableOpacity>
@@ -661,10 +732,24 @@ export default function PerfilScreen() {
                 )}
 
                 <KyrosCard title="Configuración">
+                    {rol === 'dueño' && (
+                        <>
+                            <List.Item
+                                title="Sucursales"
+                                description="Administrar sucursales"
+                                left={props => <List.Icon {...props} icon="storefront-outline" />}
+                                right={props => <List.Icon {...props} icon="chevron-right" />}
+                                onPress={() => router.push('/(tabs)/sucursales')}
+                            />
+                            <Divider />
+                        </>
+                    )}
                     <List.Item
                         title="Notificaciones"
+                        description="Administrar permisos del dispositivo"
                         left={props => <List.Icon {...props} icon="bell" />}
                         right={props => <List.Icon {...props} icon="chevron-right" />}
+                        onPress={handleOpenNotificationSettings}
                     />
                     <Divider />
                     <List.Item
@@ -699,7 +784,7 @@ export default function PerfilScreen() {
                 onRequestClose={() => setQrModalVisible(false)}
             >
                 <TouchableWithoutFeedback onPress={() => setQrModalVisible(false)}>
-                    <View style={styles.modalOverlay}>
+                    <View style={[styles.modalOverlay, { backgroundColor: palette.overlay }]}>
                         <TouchableWithoutFeedback>
                             <View style={[styles.qrModal, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outline, borderWidth: 1 }]}>
                                 <Text variant="titleLarge" style={{ fontWeight: 'bold', marginBottom: 20, textAlign: 'center', color: theme.colors.onSurface }}>
@@ -743,6 +828,8 @@ function TimePickerModal({ visible, value, onSelect, onClose }: {
     onSelect: (time: string) => void;
     onClose: () => void;
 }) {
+    const theme = useTheme();
+    const palette = useKyrosPalette();
     const [selectedHour12, setSelectedHour12] = useState(9);
     const [selectedMinute, setSelectedMinute] = useState(0);
     const [isPM, setIsPM] = useState(false);
@@ -764,11 +851,11 @@ function TimePickerModal({ visible, value, onSelect, onClose }: {
 
     return (
         <RNModal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-            <TouchableOpacity style={timeStyles.overlay} activeOpacity={1} onPress={onClose}>
-                <TouchableOpacity activeOpacity={1} style={timeStyles.container}>
-                    <Text style={timeStyles.title}>Seleccionar Hora</Text>
-                    <View style={timeStyles.preview}>
-                        <Text style={timeStyles.previewText}>{displayHour}:{displayMinute} {displayPeriod}</Text>
+            <TouchableOpacity style={[timeStyles.overlay, { backgroundColor: palette.overlay }]} activeOpacity={1} onPress={onClose}>
+                <TouchableOpacity activeOpacity={1} style={[timeStyles.container, { backgroundColor: palette.surface, borderColor: palette.borderStrong }]}>
+                    <Text style={[timeStyles.title, { color: palette.textStrong }]}>Seleccionar Hora</Text>
+                    <View style={[timeStyles.preview, { backgroundColor: palette.surfaceAlt }]}>
+                        <Text style={[timeStyles.previewText, { color: theme.colors.primary }]}>{displayHour}:{displayMinute} {displayPeriod}</Text>
                     </View>
                     <View style={timeStyles.wheelsRow}>
                         <View style={[timeStyles.column, { width: 90 }]}>
@@ -806,8 +893,8 @@ function TimePickerModal({ visible, value, onSelect, onClose }: {
                         </View>
                     </View>
                     <View style={timeStyles.actions}>
-                        <TouchableOpacity onPress={onClose} style={timeStyles.cancelBtn}>
-                            <Text style={{ color: '#94a3b8', fontSize: 16 }}>Cancelar</Text>
+                        <TouchableOpacity onPress={onClose} style={[timeStyles.cancelBtn, { borderColor: palette.border }]}>
+                            <Text style={{ color: palette.textMuted, fontSize: 16 }}>Cancelar</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                             onPress={() => {
@@ -817,7 +904,7 @@ function TimePickerModal({ visible, value, onSelect, onClose }: {
                                 onSelect(`${finalHour24.toString().padStart(2, '0')}:${selectedMinute.toString().padStart(2, '0')}`);
                                 onClose();
                             }}
-                            style={timeStyles.confirmBtn}>
+                            style={[timeStyles.confirmBtn, { backgroundColor: theme.colors.primary }]}>
                             <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>Confirmar</Text>
                         </TouchableOpacity>
                     </View>
@@ -878,6 +965,45 @@ const styles = StyleSheet.create({
     fieldLabel: { color: '#94a3b8', fontSize: 12, marginBottom: 6, fontWeight: '600', textTransform: 'uppercase' },
     timeInputContainer: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#334155', borderRadius: 8, paddingHorizontal: 16, height: 50 },
     timeInputText: { color: '#e2e8f0', fontSize: 16 },
+    ownerStatsGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 12,
+    },
+    ownerStatCard: {
+        width: '48%',
+        borderRadius: 16,
+        borderWidth: 1,
+        padding: 14,
+        gap: 8,
+    },
+    ownerStatValue: {
+        fontSize: 20,
+        fontWeight: '700',
+    },
+    ownerStatLabel: {
+        fontSize: 12,
+        fontWeight: '600',
+        textTransform: 'uppercase',
+        letterSpacing: 0.4,
+    },
+    ownerRevenueCard: {
+        borderRadius: 18,
+        borderWidth: 1,
+        padding: 16,
+        marginTop: 14,
+    },
+    ownerRevenueLabel: {
+        fontSize: 12,
+        fontWeight: '700',
+        textTransform: 'uppercase',
+        letterSpacing: 0.4,
+        marginBottom: 6,
+    },
+    ownerRevenueValue: {
+        fontSize: 24,
+        fontWeight: '800',
+    },
 
     // Web style checkbox row
     webDaysRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 20, gap: 16 },

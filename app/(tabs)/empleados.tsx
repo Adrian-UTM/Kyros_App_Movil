@@ -1,17 +1,16 @@
 import React, { useState, useCallback } from 'react';
-import { StyleSheet, View, ScrollView, Alert } from 'react-native';
-import { Text, Avatar, List, Divider, useTheme, ActivityIndicator, Snackbar, Portal } from 'react-native-paper';
+import { StyleSheet, View, ScrollView, Alert, TouchableOpacity } from 'react-native';
+import { Text, useTheme, ActivityIndicator, Snackbar, Portal } from 'react-native-paper';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
-import { TouchableOpacity } from 'react-native';
 import KyrosScreen from '../../components/KyrosScreen';
-import KyrosCard from '../../components/KyrosCard';
 import KyrosButton from '../../components/KyrosButton';
 import KyrosSelector from '../../components/KyrosSelector';
 import EmpleadoFormModal from '../../components/EmpleadoFormModal';
 import { supabase } from '../../lib/supabaseClient';
 import { useApp } from '../../lib/AppContext';
 import { confirmAction } from '../../lib/confirm';
+import { useKyrosPalette } from '../../lib/useKyrosPalette';
 
 interface Empleado {
     id: number;
@@ -24,6 +23,7 @@ interface Empleado {
 
 export default function EmpleadosScreen() {
     const theme = useTheme();
+    const palette = useKyrosPalette();
     const [empleados, setEmpleados] = useState<Empleado[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -172,16 +172,11 @@ export default function EmpleadosScreen() {
         setModalVisible(true);
     };
 
-    const activos = empleados.filter(e => {
-        if (selectedBranchId === 'general') return true;
-        return e.sucursal_id === selectedBranchId;
-    });
-
     return (
         <KyrosScreen title="Empleados">
             <ScrollView style={styles.container}>
                 {/* Add Button & Filter */}
-                <View style={[styles.topSection, { flexDirection: 'column', gap: 16, backgroundColor: '#111827', padding: 16, margin: 16, borderRadius: 16, borderWidth: 1, borderColor: '#1e293b' }]}>
+                <View style={[styles.topSection, { flexDirection: 'column', gap: 16, backgroundColor: palette.surface, padding: 16, margin: 16, borderRadius: 16, borderWidth: 1, borderColor: palette.border }]}>
                     <KyrosButton mode="contained" icon="account-plus" onPress={openCreate}>
                         Agregar Empleado
                     </KyrosButton>
@@ -211,7 +206,7 @@ export default function EmpleadosScreen() {
                 {/* Error */}
                 {!loading && error && error.toLowerCase().includes('negocio') ? (
                     <View style={styles.centerState}>
-                        <MaterialIcons name="storefront" size={64} color="#64748b" />
+                        <MaterialIcons name="storefront" size={64} color={palette.textSoft} />
                         <Text style={[styles.stateText, { fontSize: 16, marginBottom: 8 }]}>Aún no tienes sucursales</Text>
                         <Text style={[styles.stateText, { marginTop: 0, paddingHorizontal: 20 }]}>Agrega una sucursal para poder agregar empleados.</Text>
                     </View>
@@ -226,7 +221,7 @@ export default function EmpleadosScreen() {
                 {/* Empty */}
                 {!loading && !error && empleados.length === 0 && (
                     <View style={styles.centerState}>
-                        <MaterialIcons name="person-add" size={64} color="#64748b" />
+                        <MaterialIcons name="person-add" size={64} color={palette.textSoft} />
                         <Text style={styles.stateText}>No hay empleados registrados</Text>
                         <KyrosButton onPress={openCreate} style={{ marginTop: 16 }}>Agregar Empleado</KyrosButton>
                     </View>
@@ -236,38 +231,38 @@ export default function EmpleadosScreen() {
                 {!loading && !error && empleados.length > 0 && (
                     <View style={styles.listSection}>
                         <View style={styles.sectionHeader}>
-                            <MaterialIcons name="groups" size={18} color="#38bdf8" />
-                            <Text style={styles.sectionTitle}>Equipo ({empleados.length})</Text>
+                            <MaterialIcons name="groups" size={18} color={theme.colors.primary} />
+                            <Text style={[styles.sectionTitle, { color: palette.textMuted }]}>Equipo ({empleados.length})</Text>
                         </View>
 
                         {empleados.map(emp => (
-                            <View key={emp.id} style={styles.empCard}>
-                                <View style={styles.avatarCircle}>
-                                    <Text style={styles.avatarText}>{getInitials(emp.nombre)}</Text>
+                            <View key={emp.id} style={[styles.empCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+                                <View style={[styles.avatarCircle, { backgroundColor: palette.surfaceRaised }]}>
+                                    <Text style={[styles.avatarText, { color: theme.colors.primary }]}>{getInitials(emp.nombre)}</Text>
                                 </View>
                                 <View style={styles.empInfo}>
-                                    <Text style={styles.empName}>{emp.nombre}</Text>
-                                    <Text style={styles.empMeta}>{emp.especialidad || 'Sin especialidad'} • {emp.sucursal_nombre}</Text>
+                                    <Text style={[styles.empName, { color: palette.text }]}>{emp.nombre}</Text>
+                                    <Text style={[styles.empMeta, { color: palette.textMuted }]}>{emp.especialidad || 'Sin especialidad'} • {emp.sucursal_nombre}</Text>
                                 </View>
                                 <View style={styles.empActions}>
                                     <TouchableOpacity
-                                        onPress={() => handleToggleDisponible(emp)}
-                                        style={[styles.actionBtn, {
-                                            backgroundColor: emp.disponible ? 'rgba(16,185,129,0.15)' : 'rgba(100,116,139,0.1)',
-                                            borderColor: emp.disponible ? '#10b981' : '#475569',
+                                            onPress={() => handleToggleDisponible(emp)}
+                                            style={[styles.actionBtn, {
+                                            backgroundColor: emp.disponible ? palette.activeBg : palette.inactiveBg,
+                                            borderColor: emp.disponible ? palette.successText : palette.borderStrong,
                                         }]}
                                     >
                                         <MaterialIcons
                                             name={emp.disponible ? 'check-circle' : 'pause-circle-filled'}
                                             size={18}
-                                            color={emp.disponible ? '#10b981' : '#64748b'}
+                                            color={emp.disponible ? palette.successText : palette.textSoft}
                                         />
                                     </TouchableOpacity>
-                                    <TouchableOpacity onPress={() => openEdit(emp)} style={styles.actionBtn}>
-                                        <MaterialIcons name="edit" size={18} color="#94a3b8" />
+                                    <TouchableOpacity onPress={() => openEdit(emp)} style={[styles.actionBtn, { backgroundColor: palette.infoBg, borderColor: palette.infoText }]}>
+                                        <MaterialIcons name="edit" size={18} color={palette.infoText} />
                                     </TouchableOpacity>
-                                    <TouchableOpacity onPress={() => handleDelete(emp)} style={[styles.actionBtn, styles.actionDelete]}>
-                                        <MaterialIcons name="delete" size={18} color="#ef4444" />
+                                    <TouchableOpacity onPress={() => handleDelete(emp)} style={[styles.actionBtn, styles.actionDelete, { backgroundColor: palette.dangerBg, borderColor: palette.dangerText }]}>
+                                        <MaterialIcons name="delete" size={18} color={palette.dangerText} />
                                     </TouchableOpacity>
                                 </View>
                             </View>

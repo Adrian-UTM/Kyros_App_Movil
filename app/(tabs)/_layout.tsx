@@ -1,10 +1,12 @@
 import { Tabs, useRouter, useRootNavigationState } from "expo-router";
-import { useEffect, useState } from "react";
-import { Session } from "../../lib/session";
+import { useEffect } from "react";
 import { useApp } from "../../lib/AppContext";
 import { MaterialIcons } from '@expo/vector-icons';
 import { useTheme, Text, Button } from 'react-native-paper';
-import { View, ActivityIndicator, Image } from 'react-native';
+import { View, ActivityIndicator, Platform } from 'react-native';
+import { useKyrosPalette } from "../../lib/useKyrosPalette";
+import { useResponsiveLayout } from "../../lib/useResponsiveLayout";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // Menu items matching Angular dashboard (ordering follows Angular)
 // Angular: Calendario, Servicios, Empleados, Sucursales, Clientes, Estadísticas, Mi Perfil
@@ -14,7 +16,26 @@ export default function TabLayout() {
     const router = useRouter();
     const rootNavigationState = useRootNavigationState();
     const theme = useTheme();
+    const palette = useKyrosPalette();
+    const responsive = useResponsiveLayout();
+    const insets = useSafeAreaInsets();
     const { rol, isLoading: appLoading, profileMissing, refreshProfile, isAuthenticated } = useApp();
+    const isNativeMobile = Platform.OS !== 'web';
+    const hideBranchesTab = isNativeMobile;
+    const getTabLabel = (label: string) => {
+        if (!isNativeMobile) return label;
+        const mobileLabels: Record<string, string> = {
+            Calendario: 'Agenda',
+            Servicios: 'Servicios',
+            Empleados: 'Equipo',
+            Sucursales: 'Sucursales',
+            Clientes: 'Clientes',
+            Estadísticas: 'Stats',
+            'Mi Perfil': 'Perfil',
+            Sucursal: 'Sucursal',
+        };
+        return mobileLabels[label] || label;
+    };
 
     useEffect(() => {
         // Wait for the navigation state to be ready
@@ -25,7 +46,7 @@ export default function TabLayout() {
         if (!appLoading && !isAuthenticated) {
             router.replace('/');
         }
-    }, [rootNavigationState?.key, isAuthenticated, appLoading]);
+    }, [rootNavigationState?.key, isAuthenticated, appLoading, router]);
 
     // Show loading while app context is initializing or authenticating
     if (appLoading) {
@@ -65,63 +86,76 @@ export default function TabLayout() {
     return (
         <Tabs screenOptions={{
             headerShown: false,
-            tabBarActiveTintColor: '#3b82f6', // Kyros blue
-            tabBarInactiveTintColor: '#64748b',
+            tabBarHideOnKeyboard: true,
+            tabBarActiveTintColor: theme.colors.primary,
+            tabBarInactiveTintColor: palette.textSoft,
             tabBarStyle: {
-                backgroundColor: '#111827', // Dark surface
-                borderTopColor: '#1e293b'
+                backgroundColor: palette.surface,
+                borderTopColor: palette.border,
+                height: (responsive.isTablet ? 76 : 66) + insets.bottom,
+                paddingTop: responsive.isTablet ? 10 : 8,
+                paddingBottom: Math.max(insets.bottom, 10),
+                paddingHorizontal: responsive.isTablet ? 10 : 2,
+                borderTopWidth: 1,
             },
-            tabBarLabelStyle: { fontSize: 10 },
+            tabBarItemStyle: {
+                paddingHorizontal: isNativeMobile ? (responsive.isCompactPhone ? 0 : 2) : 6,
+            },
+            tabBarLabelStyle: {
+                fontSize: isNativeMobile ? (responsive.isCompactPhone ? 10 : responsive.isTablet ? 12 : 11) : 10,
+                fontWeight: '600',
+                marginBottom: isNativeMobile ? 2 : 0,
+            },
         }}>
             {/* Angular order: Calendario, Servicios, Empleados, Sucursales, Clientes, Estadísticas, Mi Perfil */}
             <Tabs.Screen
                 name="agenda"
                 options={{
-                    title: 'Calendario',
-                    tabBarIcon: ({ color }) => <MaterialIcons name="calendar-today" size={24} color={color} />,
+                    title: getTabLabel('Calendario'),
+                    tabBarIcon: ({ color }) => <MaterialIcons name="calendar-today" size={22} color={color} />,
                 }}
             />
             <Tabs.Screen
                 name="servicios"
                 options={{
-                    title: 'Servicios',
-                    tabBarIcon: ({ color }) => <MaterialIcons name="content-cut" size={24} color={color} />,
+                    title: getTabLabel('Servicios'),
+                    tabBarIcon: ({ color }) => <MaterialIcons name="content-cut" size={22} color={color} />,
                 }}
             />
             <Tabs.Screen
                 name="empleados"
                 options={{
-                    title: 'Empleados',
-                    tabBarIcon: ({ color }) => <MaterialIcons name="badge" size={24} color={color} />,
+                    title: getTabLabel('Empleados'),
+                    tabBarIcon: ({ color }) => <MaterialIcons name="badge" size={22} color={color} />,
                 }}
             />
             <Tabs.Screen
                 name="sucursales"
                 options={{
-                    href: rol === 'dueño' ? undefined : null,
-                    title: 'Sucursales',
-                    tabBarIcon: ({ color }) => <MaterialIcons name="storefront" size={24} color={color} />,
+                    href: rol === 'dueño' && !hideBranchesTab ? undefined : null,
+                    title: getTabLabel('Sucursales'),
+                    tabBarIcon: ({ color }) => <MaterialIcons name="storefront" size={22} color={color} />,
                 }}
             />
             <Tabs.Screen
                 name="clientes"
                 options={{
-                    title: 'Clientes',
-                    tabBarIcon: ({ color }) => <MaterialIcons name="people" size={24} color={color} />,
+                    title: getTabLabel('Clientes'),
+                    tabBarIcon: ({ color }) => <MaterialIcons name="people" size={22} color={color} />,
                 }}
             />
             <Tabs.Screen
                 name="estadisticas"
                 options={{
-                    title: 'Estadísticas',
-                    tabBarIcon: ({ color }) => <MaterialIcons name="bar-chart" size={24} color={color} />,
+                    title: getTabLabel('Estadísticas'),
+                    tabBarIcon: ({ color }) => <MaterialIcons name="bar-chart" size={22} color={color} />,
                 }}
             />
             <Tabs.Screen
                 name="perfil"
                 options={{
-                    title: rol === 'dueño' ? 'Mi Perfil' : 'Sucursal',
-                    tabBarIcon: ({ color }) => <MaterialIcons name={rol === 'dueño' ? "person" : "store"} size={24} color={color} />,
+                    title: getTabLabel(rol === 'dueño' ? 'Mi Perfil' : 'Sucursal'),
+                    tabBarIcon: ({ color }) => <MaterialIcons name={rol === 'dueño' ? "person" : "store"} size={22} color={color} />,
                 }}
             />
             {/* Hidden screens that exist but shouldn't show in tab bar */}

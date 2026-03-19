@@ -1,11 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, ScrollView, StyleSheet, Alert, Modal, TouchableOpacity } from 'react-native';
-import { Text, TextInput, HelperText, ActivityIndicator, Chip } from 'react-native-paper';
+import { Text, TextInput, HelperText, ActivityIndicator, useTheme } from 'react-native-paper';
 import { MaterialIcons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabaseClient';
 import { useApp } from '../lib/AppContext';
 import { safeAction } from '../lib/safeAction';
 import KyrosSelector from './KyrosSelector';
+import { useKyrosPalette } from '../lib/useKyrosPalette';
+import { useResponsiveLayout } from '../lib/useResponsiveLayout';
 
 interface Sucursal { id: number; nombre: string; }
 interface Servicio { id: number; nombre: string; }
@@ -26,6 +28,9 @@ interface Props {
 
 export default function EmpleadoFormModal({ visible, empleado, onDismiss, onSaved }: Props) {
     const { negocioId, sucursalId, rol } = useApp();
+    const theme = useTheme();
+    const palette = useKyrosPalette();
+    const responsive = useResponsiveLayout();
     const isEdit = !!empleado?.id;
 
     const [nombre, setNombre] = useState('');
@@ -40,18 +45,7 @@ export default function EmpleadoFormModal({ visible, empleado, onDismiss, onSave
     const [loadingData, setLoadingData] = useState(false);
     const [touched, setTouched] = useState({ nombre: false, especialidad: false, sucursal: false });
 
-    useEffect(() => {
-        if (visible) {
-            setNombre(empleado?.nombre || '');
-            setEspecialidad(empleado?.especialidad || '');
-            setSelectedSucursalId(empleado?.sucursal_id || (rol === 'sucursal' ? sucursalId : null));
-            setSelectedServiciosIds([]);
-            setTouched({ nombre: false, especialidad: false, sucursal: false });
-            loadFormData();
-        }
-    }, [visible]);
-
-    const loadFormData = async () => {
+    const loadFormData = useCallback(async () => {
         if (!negocioId) return;
         setLoadingData(true);
         try {
@@ -74,11 +68,18 @@ export default function EmpleadoFormModal({ visible, empleado, onDismiss, onSave
         } finally {
             setLoadingData(false);
         }
-    };
+    }, [negocioId, rol, sucursalId, isEdit, empleado?.id]);
 
-    const toggleServicio = (id: number) => {
-        setSelectedServiciosIds(prev => prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]);
-    };
+    useEffect(() => {
+        if (visible) {
+            setNombre(empleado?.nombre || '');
+            setEspecialidad(empleado?.especialidad || '');
+            setSelectedSucursalId(empleado?.sucursal_id || (rol === 'sucursal' ? sucursalId : null));
+            setSelectedServiciosIds([]);
+            setTouched({ nombre: false, especialidad: false, sucursal: false });
+            loadFormData();
+        }
+    }, [visible, empleado, rol, sucursalId, loadFormData]);
 
     const isFormValid = nombre.trim().length > 0 && especialidad.trim().length > 0 && (rol === 'sucursal' ? !!sucursalId : !!selectedSucursalId);
 
@@ -121,27 +122,27 @@ export default function EmpleadoFormModal({ visible, empleado, onDismiss, onSave
 
     return (
         <Modal visible={visible} transparent animationType="slide" onRequestClose={onDismiss}>
-            <View style={styles.overlay}>
-                <View style={styles.modal}>
+            <View style={[styles.overlay, { backgroundColor: palette.overlay }]}>
+                <View style={[styles.modal, { backgroundColor: palette.surface, borderColor: palette.borderStrong, width: '100%', maxWidth: responsive.modalMaxWidth, alignSelf: 'center' }]}>
                     <ScrollView showsVerticalScrollIndicator={false}>
                         {/* Header */}
                         <View style={styles.header}>
-                            <View style={styles.headerIcon}>
-                                <MaterialIcons name={isEdit ? "edit" : "person-add"} size={28} color="#38bdf8" />
+                            <View style={[styles.headerIcon, { backgroundColor: palette.selectedBg }]}>
+                                <MaterialIcons name={isEdit ? "edit" : "person-add"} size={28} color={theme.colors.primary} />
                             </View>
-                            <Text style={styles.title}>{isEdit ? 'Editar Empleado' : 'Nuevo Empleado'}</Text>
-                            <Text style={styles.subtitle}>{isEdit ? 'Actualiza los datos' : 'Agrega un nuevo miembro'}</Text>
+                            <Text style={[styles.title, { color: palette.textStrong }]}>{isEdit ? 'Editar Empleado' : 'Nuevo Empleado'}</Text>
+                            <Text style={[styles.subtitle, { color: palette.textSoft }]}>{isEdit ? 'Actualiza los datos' : 'Agrega un nuevo miembro'}</Text>
                         </View>
 
-                        {loadingData && <ActivityIndicator style={{ marginVertical: 20 }} color="#38bdf8" />}
+                        {loadingData && <ActivityIndicator style={{ marginVertical: 20 }} color={theme.colors.primary} />}
 
                         {!loadingData && (
                             <>
                                 {/* Basic Info */}
                                 <View style={styles.section}>
                                     <View style={styles.sectionHeader}>
-                                        <MaterialIcons name="badge" size={18} color="#38bdf8" />
-                                        <Text style={styles.sectionTitle}>Datos Básicos</Text>
+                                        <MaterialIcons name="badge" size={18} color={theme.colors.primary} />
+                                        <Text style={[styles.sectionTitle, { color: palette.textMuted }]}>Datos Básicos</Text>
                                     </View>
 
                                     <TextInput
@@ -151,11 +152,11 @@ export default function EmpleadoFormModal({ visible, empleado, onDismiss, onSave
                                         onChangeText={setNombre}
                                         error={touched.nombre && !nombre.trim()}
                                         onBlur={() => setTouched(t => ({ ...t, nombre: true }))}
-                                        style={styles.input}
-                                        textColor="#e2e8f0"
-                                        outlineColor="#334155"
-                                        activeOutlineColor="#38bdf8"
-                                        theme={{ colors: { onSurfaceVariant: '#94a3b8' } }}
+                                        style={[styles.input, { backgroundColor: palette.inputBg }]}
+                                        textColor={palette.text}
+                                        outlineColor={palette.border}
+                                        activeOutlineColor={theme.colors.primary}
+                                        theme={{ colors: { onSurfaceVariant: palette.textMuted } }}
                                     />
                                     {touched.nombre && !nombre.trim() && <HelperText type="error" visible>El nombre es requerido</HelperText>}
 
@@ -165,11 +166,11 @@ export default function EmpleadoFormModal({ visible, empleado, onDismiss, onSave
                                         value={especialidad}
                                         onChangeText={setEspecialidad}
                                         onBlur={() => setTouched(t => ({ ...t, especialidad: true }))}
-                                        style={styles.input}
-                                        textColor="#e2e8f0"
-                                        outlineColor="#334155"
-                                        activeOutlineColor="#38bdf8"
-                                        theme={{ colors: { onSurfaceVariant: '#94a3b8' } }}
+                                        style={[styles.input, { backgroundColor: palette.inputBg }]}
+                                        textColor={palette.text}
+                                        outlineColor={palette.border}
+                                        activeOutlineColor={theme.colors.primary}
+                                        theme={{ colors: { onSurfaceVariant: palette.textMuted } }}
                                     />
                                     {touched.especialidad && !especialidad.trim() && <HelperText type="error" visible>La especialidad es requerida</HelperText>}
                                 </View>
@@ -178,8 +179,8 @@ export default function EmpleadoFormModal({ visible, empleado, onDismiss, onSave
                                 {rol !== 'sucursal' && (
                                     <View style={styles.section}>
                                         <View style={styles.sectionHeader}>
-                                            <MaterialIcons name="store" size={18} color="#38bdf8" />
-                                            <Text style={styles.sectionTitle}>Sucursal *</Text>
+                                            <MaterialIcons name="store" size={18} color={theme.colors.primary} />
+                                            <Text style={[styles.sectionTitle, { color: palette.textMuted }]}>Sucursal *</Text>
                                         </View>
                                         <KyrosSelector
                                             options={sucursales.map(s => ({ label: s.nombre, value: s.id }))}
@@ -198,8 +199,8 @@ export default function EmpleadoFormModal({ visible, empleado, onDismiss, onSave
                                 {servicios.length > 0 && (
                                     <View style={styles.section}>
                                         <View style={styles.sectionHeader}>
-                                            <MaterialIcons name="content-cut" size={18} color="#38bdf8" />
-                                            <Text style={styles.sectionTitle}>Servicios ({selectedServiciosIds.length})</Text>
+                                            <MaterialIcons name="content-cut" size={18} color={theme.colors.primary} />
+                                            <Text style={[styles.sectionTitle, { color: palette.textMuted }]}>Servicios ({selectedServiciosIds.length})</Text>
                                         </View>
                                         <KyrosSelector
                                             options={servicios.map(s => ({ label: s.nombre, value: s.id }))}
@@ -213,13 +214,13 @@ export default function EmpleadoFormModal({ visible, empleado, onDismiss, onSave
 
                                 {/* Actions */}
                                 <View style={styles.actions}>
-                                    <TouchableOpacity onPress={onDismiss} style={styles.cancelBtn}>
-                                        <Text style={{ color: '#94a3b8', fontSize: 16, fontWeight: '600' }}>Cancelar</Text>
+                                    <TouchableOpacity onPress={onDismiss} style={[styles.cancelBtn, { borderColor: palette.border }]}>
+                                        <Text style={{ color: palette.textMuted, fontSize: 16, fontWeight: '600' }}>Cancelar</Text>
                                     </TouchableOpacity>
                                     <TouchableOpacity
                                         onPress={handleSave}
                                         disabled={!isFormValid || saving}
-                                        style={[styles.saveBtn, (!isFormValid || saving) && { opacity: 0.5 }]}
+                                        style={[styles.saveBtn, { backgroundColor: theme.colors.primary }, (!isFormValid || saving) && { opacity: 0.5 }]}
                                     >
                                         {saving ? (
                                             <ActivityIndicator color="#fff" size="small" />

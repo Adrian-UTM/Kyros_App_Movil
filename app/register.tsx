@@ -4,9 +4,12 @@ import { TextInput, Text, Icon, Button } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Session } from '../lib/session';
+import { useSystemKyrosPalette } from '../lib/useKyrosPalette';
+import BrandedLogo from '../components/BrandedLogo';
 
 export default function RegisterScreen() {
     const router = useRouter();
+    const palette = useSystemKyrosPalette();
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -28,7 +31,7 @@ export default function RegisterScreen() {
             Animated.spring(formAnim, { toValue: 1, tension: 50, friction: 8, useNativeDriver: true }),
             Animated.spring(buttonAnim, { toValue: 1, tension: 50, friction: 8, useNativeDriver: true }),
         ]).start();
-    }, []);
+    }, [buttonAnim, formAnim, logoAnim]);
 
     const pickImage = async () => {
         try {
@@ -102,7 +105,7 @@ export default function RegisterScreen() {
         colors: {
             onSurfaceVariant: '#94a3b8',
             outline: 'transparent',
-            primary: '#3b82f6',
+            primary: palette.primary,
         },
         roundness: 14,
     };
@@ -110,7 +113,7 @@ export default function RegisterScreen() {
     return (
         <KeyboardAvoidingView
             behavior={Platform.OS === "ios" ? "padding" : "height"}
-            style={styles.container}
+            style={[styles.container, { backgroundColor: palette.background }]}
         >
             {/* Subtle background glow */}
             <View style={styles.glowCircle} />
@@ -122,19 +125,20 @@ export default function RegisterScreen() {
                 keyboardShouldPersistTaps="handled"
             >
                 <View style={styles.content}>
-                    <View style={styles.card}>
+                    <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}>
                         {/* Logo */}
                         <Animated.View style={[styles.logoContainer, {
                             opacity: logoAnim,
                             transform: [{ translateY: logoAnim.interpolate({ inputRange: [0, 1], outputRange: [-30, 0] }) }],
                         }]}>
-                            <Image
-                                source={require('../assets/images/logo-text.png')}
-                                style={styles.logo}
-                                resizeMode="contain"
+                            <BrandedLogo
+                                width={240}
+                                height={75}
+                                respectSystemTheme
+                                containerStyle={palette.isDark ? styles.logoPlate : undefined}
                             />
-                            <Text style={styles.title}>Crear Cuenta</Text>
-                            <Text style={styles.subtitle}>Únete a la comunidad de Kyros</Text>
+                            <Text style={[styles.title, { color: palette.text }]}>Crear Cuenta</Text>
+                            <Text style={[styles.subtitle, { color: palette.textMuted }]}>Únete a la comunidad de Kyros</Text>
                         </Animated.View>
 
                         {/* Avatar */}
@@ -142,20 +146,20 @@ export default function RegisterScreen() {
                             opacity: logoAnim,
                             transform: [{ scale: logoAnim.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1] }) }],
                         }]}>
-                            <TouchableOpacity style={styles.avatarCircle} activeOpacity={0.7} onPress={pickImage}>
+                            <TouchableOpacity style={[styles.avatarCircle, { backgroundColor: palette.surfaceRaised }]} activeOpacity={0.7} onPress={pickImage}>
                                 {imageUri ? (
                                     <Image source={{ uri: imageUri }} style={styles.avatarImage} />
                                 ) : (
-                                    <View style={styles.avatarPlaceholder}>
-                                        <Icon source="camera-plus" size={32} color="#475569" />
+                                    <View style={[styles.avatarPlaceholder, { backgroundColor: palette.surfaceAlt }]}>
+                                        <Icon source="camera-plus" size={32} color={palette.disabled} />
                                     </View>
                                 )}
-                                <View style={styles.avatarBadge}>
+                                <View style={[styles.avatarBadge, { backgroundColor: palette.primary }]}>
                                     <Icon source="pencil" size={14} color="#fff" />
                                 </View>
                             </TouchableOpacity>
                             <TouchableOpacity onPress={pickImage}>
-                                <Text style={styles.avatarText}>
+                                <Text style={[styles.avatarText, { color: palette.primary }]}>
                                     {imageUri ? 'Cambiar foto' : 'Agregar foto'}
                                 </Text>
                             </TouchableOpacity>
@@ -171,12 +175,12 @@ export default function RegisterScreen() {
                                 value={name}
                                 onChangeText={(text) => { setName(text); setError(''); setSuccessMessage(''); }}
                                 mode="flat"
-                                style={styles.input}
+                                style={[styles.input, { backgroundColor: palette.inputBg }]}
                                 autoCapitalize="words"
-                                textColor="#e2e8f0"
+                                textColor={palette.text}
                                 underlineColor="transparent"
                                 activeUnderlineColor="#3b82f6"
-                                left={<TextInput.Icon icon="account-outline" color="#94a3b8" />}
+                                left={<TextInput.Icon icon="account-outline" color={palette.icon} />}
                                 theme={inputTheme}
                             />
 
@@ -185,13 +189,13 @@ export default function RegisterScreen() {
                                 value={email}
                                 onChangeText={(text) => { setEmail(text); setError(''); setSuccessMessage(''); }}
                                 mode="flat"
-                                style={styles.input}
+                                style={[styles.input, { backgroundColor: palette.inputBg }]}
                                 keyboardType="email-address"
                                 autoCapitalize="none"
-                                textColor="#e2e8f0"
+                                textColor={palette.text}
                                 underlineColor="transparent"
                                 activeUnderlineColor="#3b82f6"
-                                left={<TextInput.Icon icon="email-outline" color="#94a3b8" />}
+                                left={<TextInput.Icon icon="email-outline" color={palette.icon} />}
                                 theme={inputTheme}
                             />
 
@@ -201,16 +205,16 @@ export default function RegisterScreen() {
                                 onChangeText={(text) => { setPassword(text); setError(''); setSuccessMessage(''); }}
                                 mode="flat"
                                 secureTextEntry={hidePassword}
-                                right={<TextInput.Icon icon={hidePassword ? "eye-outline" : "eye-off-outline"} color="#94a3b8" onPress={() => setHidePassword(!hidePassword)} />}
-                                left={<TextInput.Icon icon="lock-outline" color="#94a3b8" />}
-                                style={styles.input}
-                                textColor="#e2e8f0"
+                                right={<TextInput.Icon icon={hidePassword ? "eye-outline" : "eye-off-outline"} color={palette.icon} onPress={() => setHidePassword(!hidePassword)} />}
+                                left={<TextInput.Icon icon="lock-outline" color={palette.icon} />}
+                                style={[styles.input, { backgroundColor: palette.inputBg }]}
+                                textColor={palette.text}
                                 underlineColor="transparent"
                                 activeUnderlineColor="#3b82f6"
                                 theme={inputTheme}
                             />
 
-                            <Text style={styles.helperText}>Mínimo 6 caracteres</Text>
+                            <Text style={[styles.helperText, { color: palette.textSoft }]}>Mínimo 6 caracteres</Text>
 
                             <TextInput
                                 label="Confirmar Contraseña"
@@ -218,22 +222,22 @@ export default function RegisterScreen() {
                                 onChangeText={(text) => { setConfirmPassword(text); setError(''); setSuccessMessage(''); }}
                                 mode="flat"
                                 secureTextEntry={hidePassword}
-                                left={<TextInput.Icon icon="lock-check-outline" color="#94a3b8" />}
-                                style={styles.input}
-                                textColor="#e2e8f0"
+                                left={<TextInput.Icon icon="lock-check-outline" color={palette.icon} />}
+                                style={[styles.input, { backgroundColor: palette.inputBg }]}
+                                textColor={palette.text}
                                 underlineColor="transparent"
                                 activeUnderlineColor="#3b82f6"
                                 theme={inputTheme}
                             />
 
                             {!!error && (
-                                <View style={styles.errorContainer}>
+                                <View style={[styles.errorContainer, { backgroundColor: palette.dangerBg }]}>
                                     <Text style={styles.errorText}>{error}</Text>
                                 </View>
                             )}
 
                             {!!successMessage && (
-                                <View style={styles.successContainer}>
+                                <View style={[styles.successContainer, { backgroundColor: palette.successBg }]}>
                                     <Text style={styles.successText}>{successMessage}</Text>
                                 </View>
                             )}
@@ -260,9 +264,9 @@ export default function RegisterScreen() {
 
                         {/* Footer */}
                         <Animated.View style={[styles.footer, { opacity: buttonAnim }]}>
-                            <Text style={styles.footerText}>
+                            <Text style={[styles.footerText, { color: palette.textMuted }]}>
                                 ¿Ya tienes cuenta?{' '}
-                                <Text style={styles.link} onPress={() => router.replace('/')}>
+                                <Text style={[styles.link, { color: palette.primary }]} onPress={() => router.replace('/')}>
                                     Inicia Sesión
                                 </Text>
                             </Text>
@@ -321,6 +325,9 @@ const styles = StyleSheet.create({
     logo: {
         width: 240,
         height: 75,
+        marginBottom: 16,
+    },
+    logoPlate: {
         marginBottom: 16,
     },
     title: {

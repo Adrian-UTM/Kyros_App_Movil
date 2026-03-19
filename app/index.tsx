@@ -1,10 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, StyleSheet, Image, Animated } from 'react-native';
+import { View, StyleSheet, Animated } from 'react-native';
 import { TextInput, Button, Text } from 'react-native-paper';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../lib/supabaseClient';
 import { Session } from '../lib/session';
 import { useApp } from '../lib/AppContext';
+import { useSystemKyrosPalette } from '../lib/useKyrosPalette';
+import BrandedLogo from '../components/BrandedLogo';
 
 
 
@@ -19,6 +21,7 @@ export default function LoginScreen() {
   const [failedAttempts, setFailedAttempts] = useState(0);
 
   const { isAuthenticated, isLoading: appLoading } = useApp();
+  const palette = useSystemKyrosPalette();
 
   // Animations
   const logoAnim = useRef(new Animated.Value(0)).current;
@@ -31,13 +34,13 @@ export default function LoginScreen() {
       Animated.spring(formAnim, { toValue: 1, tension: 50, friction: 8, useNativeDriver: true }),
       Animated.spring(buttonAnim, { toValue: 1, tension: 50, friction: 8, useNativeDriver: true }),
     ]).start();
-  }, []);
+  }, [buttonAnim, formAnim, logoAnim]);
 
   React.useEffect(() => {
     if (!appLoading && isAuthenticated) {
       router.replace('/(tabs)/agenda');
     }
-  }, [isAuthenticated, appLoading]);
+  }, [isAuthenticated, appLoading, router]);
 
   const handleResetPassword = async () => {
     if (!email) {
@@ -48,7 +51,7 @@ export default function LoginScreen() {
     setError('');
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: 'kyrosapp://reset-password',
+        redirectTo: 'kyrosreactnative://reset-password',
       });
       if (error) throw error;
       alert('Se han enviado instrucciones a tu correo para restablecer la contraseña.');
@@ -87,29 +90,30 @@ export default function LoginScreen() {
     colors: {
       onSurfaceVariant: '#94a3b8',
       outline: 'transparent',
-      primary: '#3b82f6',
+      primary: palette.primary,
     },
     roundness: 14,
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: palette.background }]}>
       {/* Subtle background glow */}
       <View style={styles.glowCircle} />
 
       <View style={styles.content}>
-        <View style={styles.card}>
+        <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}>
           {/* Logo */}
           <Animated.View style={[styles.logoContainer, {
             opacity: logoAnim,
             transform: [{ translateY: logoAnim.interpolate({ inputRange: [0, 1], outputRange: [-30, 0] }) }],
           }]}>
-            <Image
-              source={require('../assets/images/logo-text.png')}
-              style={styles.logo}
-              resizeMode="contain"
+            <BrandedLogo
+              width={280}
+              height={90}
+              respectSystemTheme
+              containerStyle={palette.isDark ? styles.logoPlate : undefined}
             />
-            <Text style={styles.tagline}>Gestión inteligente para tu negocio</Text>
+            <Text style={[styles.tagline, { color: palette.textMuted }]}>Gestión inteligente para tu negocio</Text>
           </Animated.View>
 
           {/* Form */}
@@ -122,13 +126,13 @@ export default function LoginScreen() {
               value={email}
               onChangeText={(text) => { setEmail(text); setError(''); }}
               mode="flat"
-              style={styles.input}
+              style={[styles.input, { backgroundColor: palette.inputBg }]}
               keyboardType="email-address"
               autoCapitalize="none"
-              textColor="#e2e8f0"
+              textColor={palette.text}
               underlineColor="transparent"
               activeUnderlineColor="#3b82f6"
-              left={<TextInput.Icon icon="email-outline" color="#94a3b8" />}
+              left={<TextInput.Icon icon="email-outline" color={palette.icon} />}
               theme={inputTheme}
             />
 
@@ -138,17 +142,17 @@ export default function LoginScreen() {
               onChangeText={(text) => { setPassword(text); setError(''); }}
               mode="flat"
               secureTextEntry={hidePassword}
-              right={<TextInput.Icon icon={hidePassword ? "eye-outline" : "eye-off-outline"} color="#94a3b8" onPress={() => setHidePassword(!hidePassword)} />}
-              left={<TextInput.Icon icon="lock-outline" color="#94a3b8" />}
-              style={styles.input}
-              textColor="#e2e8f0"
+              right={<TextInput.Icon icon={hidePassword ? "eye-outline" : "eye-off-outline"} color={palette.icon} onPress={() => setHidePassword(!hidePassword)} />}
+              left={<TextInput.Icon icon="lock-outline" color={palette.icon} />}
+              style={[styles.input, { backgroundColor: palette.inputBg }]}
+              textColor={palette.text}
               underlineColor="transparent"
               activeUnderlineColor="#3b82f6"
               theme={inputTheme}
             />
 
             {!!error && (
-              <View style={styles.errorContainer}>
+              <View style={[styles.errorContainer, { backgroundColor: palette.dangerBg }]}>
                 <Text style={styles.errorText}>{error}</Text>
               </View>
             )}
@@ -157,7 +161,7 @@ export default function LoginScreen() {
               <Button
                 mode="text"
                 onPress={handleResetPassword}
-                textColor="#60a5fa"
+                textColor={palette.primary}
                 style={{ marginTop: 4 }}
                 labelStyle={{ fontSize: 13 }}
               >
@@ -188,9 +192,9 @@ export default function LoginScreen() {
 
           {/* Footer */}
           <Animated.View style={[styles.footer, { opacity: buttonAnim }]}>
-            <Text style={styles.footerText}>
-              ¿No tienes cuenta?{' '}
-              <Text style={styles.link} onPress={() => router.push('/register')}>
+              <Text style={[styles.footerText, { color: palette.textMuted }]}>
+                ¿No tienes cuenta?{' '}
+              <Text style={[styles.link, { color: palette.primary }]} onPress={() => router.push('/register')}>
                 Regístrate aquí
               </Text>
             </Text>
@@ -235,6 +239,9 @@ const styles = StyleSheet.create({
   logo: {
     width: 280,
     height: 90,
+    marginBottom: 12,
+  },
+  logoPlate: {
     marginBottom: 12,
   },
   tagline: {

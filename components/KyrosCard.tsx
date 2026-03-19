@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, ViewStyle, StyleProp } from 'react-native';
 import { Card, Text, useTheme } from 'react-native-paper';
 import { useApp } from '../lib/AppContext';
+import { useKyrosPalette } from '../lib/useKyrosPalette';
 
 interface KyrosCardProps {
     title?: string;
@@ -13,6 +14,7 @@ interface KyrosCardProps {
 export default function KyrosCard({ title, children, onPress, style }: KyrosCardProps) {
     const theme = useTheme();
     const { themeMode } = useApp();
+    const palette = useKyrosPalette();
 
     return (
         <Card
@@ -29,7 +31,7 @@ export default function KyrosCard({ title, children, onPress, style }: KyrosCard
         >
             <Card.Content style={styles.content}>
                 {title && (
-                    <Text variant="titleLarge" style={[styles.title, { color: theme.colors.onSurface }]}>
+                    <Text variant="titleLarge" style={[styles.title, { color: palette.text }]}>
                         {title}
                     </Text>
                 )}

@@ -1,16 +1,15 @@
 import React, { useState, useCallback } from 'react';
-import { StyleSheet, View, ScrollView, Image, Alert } from 'react-native';
-import { Text, List, Divider, useTheme, ActivityIndicator } from 'react-native-paper';
+import { StyleSheet, View, ScrollView, Image, Alert, TouchableOpacity } from 'react-native';
+import { Text, useTheme, ActivityIndicator } from 'react-native-paper';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import KyrosScreen from '../../components/KyrosScreen';
-import KyrosCard from '../../components/KyrosCard';
 import KyrosButton from '../../components/KyrosButton';
 import { supabase } from '../../lib/supabaseClient';
 import { useApp } from '../../lib/AppContext';
 import ServicioFormModal from '../../components/ServicioFormModal';
-import { TouchableOpacity } from 'react-native';
 import { confirmAction } from '../../lib/confirm';
+import { useKyrosPalette } from '../../lib/useKyrosPalette';
 
 interface Servicio {
     id: number;
@@ -23,6 +22,7 @@ interface Servicio {
 
 export default function ServiciosScreen() {
     const theme = useTheme();
+    const palette = useKyrosPalette();
     const { negocioId, sucursalId, rol, isLoading: appLoading } = useApp();
     const [servicios, setServicios] = useState<Servicio[]>([]);
     const [loading, setLoading] = useState(true);
@@ -77,8 +77,6 @@ export default function ServiciosScreen() {
         }, [fetchServicios, appLoading])
     );
 
-    const activos = servicios;
-
     const handleDeleteServicio = (servicio: Servicio) => {
         confirmAction(
             'Eliminar Servicio',
@@ -123,7 +121,7 @@ export default function ServiciosScreen() {
 
                 {!loading && error && error.toLowerCase().includes('negocio') ? (
                     <View style={styles.centerState}>
-                        <MaterialIcons name="storefront" size={64} color="#64748b" />
+                        <MaterialIcons name="storefront" size={64} color={palette.textSoft} />
                         <Text style={[styles.stateText, { fontSize: 16, marginBottom: 8 }]}>Aún no tienes sucursales</Text>
                         <Text style={[styles.stateText, { marginTop: 0, paddingHorizontal: 20 }]}>Agrega una sucursal para poder agregar servicios.</Text>
                     </View>
@@ -137,7 +135,7 @@ export default function ServiciosScreen() {
 
                 {!loading && !error && servicios.length === 0 && (
                     <View style={styles.centerState}>
-                        <MaterialIcons name="content-cut" size={64} color="#64748b" />
+                        <MaterialIcons name="content-cut" size={64} color={palette.textSoft} />
                         <Text style={styles.stateText}>No hay servicios registrados</Text>
                         <KyrosButton onPress={() => setModalVisible(true)} style={{ marginTop: 16 }}>Agregar Servicio</KyrosButton>
                     </View>
@@ -146,7 +144,7 @@ export default function ServiciosScreen() {
                 {!loading && !error && servicios.length > 0 && (
                     <>
                         {/* Add Button */}
-                        <View style={styles.topSection}>
+                        <View style={[styles.topSection, { backgroundColor: palette.surface, borderColor: palette.border }]}>
                             <KyrosButton
                                 mode="contained"
                                 icon="plus"
@@ -161,13 +159,13 @@ export default function ServiciosScreen() {
 
                         {/* Service List */}
                         <View style={styles.listSection}>
-                            <View style={styles.sectionHeader}>
-                                <MaterialIcons name="content-cut" size={18} color="#38bdf8" />
-                                <Text style={styles.sectionTitle}>Servicios ({servicios.length})</Text>
-                            </View>
+                        <View style={styles.sectionHeader}>
+                            <MaterialIcons name="content-cut" size={18} color="#38bdf8" />
+                            <Text style={[styles.sectionTitle, { color: palette.textMuted }]}>Servicios ({servicios.length})</Text>
+                        </View>
 
-                            {servicios.map(servicio => (
-                                <View key={servicio.id} style={styles.serviceCard}>
+                        {servicios.map(servicio => (
+                                    <View key={servicio.id} style={[styles.serviceCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
                                     {/* Icon / Image */}
                                     {servicio.imagen_url ? (
                                         <Image
@@ -175,14 +173,14 @@ export default function ServiciosScreen() {
                                             style={styles.serviceImage}
                                         />
                                     ) : (
-                                        <View style={styles.serviceIconCircle}>
-                                            <MaterialIcons name="content-cut" size={20} color="#38bdf8" />
+                                        <View style={[styles.serviceIconCircle, { backgroundColor: palette.surfaceRaised }]}>
+                                            <MaterialIcons name="content-cut" size={20} color={theme.colors.primary} />
                                         </View>
                                     )}
 
                                     <View style={styles.serviceInfo}>
-                                        <Text style={styles.serviceName}>{servicio.nombre}</Text>
-                                        <Text style={styles.serviceMeta}>
+                                        <Text style={[styles.serviceName, { color: palette.text }]}>{servicio.nombre}</Text>
+                                        <Text style={[styles.serviceMeta, { color: palette.textMuted }]}>
                                             ${servicio.precio_base ?? 0} • {servicio.duracion_aprox_minutos ?? '—'} min
                                         </Text>
                                     </View>
@@ -190,15 +188,15 @@ export default function ServiciosScreen() {
                                     <View style={styles.serviceActions}>
                                         <TouchableOpacity
                                             onPress={() => { setSelectedServicio(servicio); setModalVisible(true); }}
-                                            style={styles.actionBtn}
+                                            style={[styles.actionBtn, { backgroundColor: palette.infoBg, borderColor: palette.infoText }]}
                                         >
-                                            <MaterialIcons name="edit" size={18} color="#94a3b8" />
+                                            <MaterialIcons name="edit" size={18} color={palette.infoText} />
                                         </TouchableOpacity>
                                         <TouchableOpacity
                                             onPress={() => handleDeleteServicio(servicio)}
-                                            style={[styles.actionBtn, styles.actionDelete]}
+                                            style={[styles.actionBtn, styles.actionDelete, { backgroundColor: palette.dangerBg, borderColor: palette.dangerText }]}
                                         >
-                                            <MaterialIcons name="delete" size={18} color="#ef4444" />
+                                            <MaterialIcons name="delete" size={18} color={palette.dangerText} />
                                         </TouchableOpacity>
                                     </View>
                                 </View>

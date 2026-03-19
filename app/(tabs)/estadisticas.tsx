@@ -3,12 +3,13 @@ import { StyleSheet, View, ScrollView, TouchableOpacity, ActivityIndicator, Dime
 import { Text, useTheme } from 'react-native-paper';
 import { MaterialIcons } from '@expo/vector-icons';
 import Svg, { G, Path, Circle } from 'react-native-svg';
-import { Picker } from '@react-native-picker/picker';
+import { useFocusEffect } from 'expo-router';
 import KyrosScreen from '../../components/KyrosScreen';
 import KyrosCard from '../../components/KyrosCard';
 import KyrosSelector from '../../components/KyrosSelector';
 import { useApp } from '../../lib/AppContext';
 import { supabase } from '../../lib/supabaseClient';
+import { useKyrosPalette } from '../../lib/useKyrosPalette';
 
 const DonutChart = ({ data, size = 150 }: { data: { name: string, count: number, color: string }[], size?: number }) => {
     const strokeWidth = size > 200 ? 36 : 24;
@@ -52,8 +53,94 @@ const DonutChart = ({ data, size = 150 }: { data: { name: string, count: number,
     );
 };
 
+function ServiceHighlightsCard({
+    title,
+    data,
+    loading,
+    total,
+    onOpenFull,
+    compact = false,
+}: {
+    title: string;
+    data: { name: string; count: number; color: string }[];
+    loading: boolean;
+    total: number;
+    onOpenFull?: () => void;
+    compact?: boolean;
+}) {
+    const palette = useKyrosPalette();
+    const topService = data[0];
+
+    return (
+        <KyrosCard style={{ flex: 1 }}>
+            <View style={styles.servicesCardHeader}>
+                <View>
+                    <Text variant="titleMedium" style={[styles.cardTitle, { marginBottom: 4 }]}>{title}</Text>
+                    <Text style={[styles.servicesCardSubtitle, { color: palette.textMuted }]}>
+                        {total > 0 ? `${total} servicio(s) registrados en el período` : 'Sin actividad en el período'}
+                    </Text>
+                </View>
+                {onOpenFull ? (
+                    <TouchableOpacity onPress={onOpenFull} style={[styles.servicesCardExpand, { backgroundColor: palette.surfaceRaised }]}>
+                        <MaterialIcons name="fullscreen" size={22} color={palette.text} />
+                    </TouchableOpacity>
+                ) : null}
+            </View>
+
+            {loading ? (
+                <ActivityIndicator style={{ marginVertical: 30 }} />
+            ) : data.length === 0 ? (
+                <View style={styles.servicesEmptyState}>
+                    <MaterialIcons name="insert-chart-outlined" size={34} color={palette.disabled} />
+                    <Text style={[styles.emptyText, { marginVertical: 12 }]}>Sin datos de servicios para este período</Text>
+                </View>
+            ) : (
+                <>
+                    <View style={[styles.servicesHero, compact && styles.servicesHeroCompact]}>
+                        <View style={[styles.servicesHeroSummary, { backgroundColor: palette.surfaceRaised, borderColor: palette.border }]}>
+                            <Text style={[styles.servicesHeroLabel, { color: palette.textMuted }]}>Servicio líder</Text>
+                            <Text style={[styles.servicesHeroTitle, { color: palette.text }]} numberOfLines={2}>{topService?.name}</Text>
+                            <Text style={styles.servicesHeroMeta}>
+                                {topService?.count} cita(s) • {Math.round(((topService?.count || 0) / total) * 100)}%
+                            </Text>
+                        </View>
+                        <View style={styles.servicesDonutWrap}>
+                            <DonutChart data={data.slice(0, 5)} size={compact ? 132 : 152} />
+                            <View style={styles.servicesDonutCenter}>
+                                <Text style={[styles.servicesDonutCenterValue, { color: palette.text }]}>{total}</Text>
+                                <Text style={[styles.servicesDonutCenterLabel, { color: palette.textMuted }]}>Total</Text>
+                            </View>
+                        </View>
+                    </View>
+
+                    <View style={styles.servicesRanking}>
+                        {data.slice(0, 5).map((item, idx) => {
+                            const pct = total > 0 ? Math.round((item.count / total) * 100) : 0;
+                            return (
+                                <View key={`${item.name}-${idx}`} style={styles.servicesRankingRow}>
+                                    <View style={styles.servicesRankingTop}>
+                                        <View style={styles.servicesRankingNameWrap}>
+                                            <View style={[styles.legendColorBox, { backgroundColor: item.color, marginRight: 10 }]} />
+                                            <Text style={[styles.servicesRankingName, { color: palette.text }]} numberOfLines={1}>{item.name}</Text>
+                                        </View>
+                                        <Text style={[styles.servicesRankingValue, { color: palette.textMuted }]}>{item.count} • {pct}%</Text>
+                                    </View>
+                                    <View style={[styles.servicesRankingTrack, { backgroundColor: palette.surfaceRaised }]}>
+                                        <View style={[styles.servicesRankingFill, { width: `${Math.max(pct, 6)}%`, backgroundColor: item.color }]} />
+                                    </View>
+                                </View>
+                            );
+                        })}
+                    </View>
+                </>
+            )}
+        </KyrosCard>
+    );
+}
+
 export default function EstadisticasScreen() {
     const theme = useTheme();
+    const palette = useKyrosPalette();
     const { rol, sucursalId, negocioId: appNegocioId } = useApp();
     const screenWidth = Dimensions.get('window').width;
     const isOwner = rol !== 'sucursal';
@@ -147,7 +234,7 @@ export default function EstadisticasScreen() {
         } finally {
             setLoading(false);
         }
-    }, [sucursalId, rol, currentDate, viewMode, appNegocioId, sucursales, isOwner, revenueBranchId]);
+    }, [sucursalId, currentDate, viewMode, appNegocioId, sucursales, isOwner, revenueBranchId]);
 
     // ──────────────────────────────────────────────
     // Load services data
@@ -160,11 +247,14 @@ export default function EstadisticasScreen() {
 
         setServicesLoading(true);
         try {
+            const { startDate, endDate } = getDateRange(currentDate, viewMode);
             let query = supabase
                 .from('citas')
-                .select('id, sucursal_id')
+                .select('id, sucursal_id, fecha_hora_inicio')
                 .eq('negocio_id', appNegocioId)
-                .eq('estado', 'completada');
+                .neq('estado', 'cancelada')
+                .gte('fecha_hora_inicio', startDate)
+                .lte('fecha_hora_inicio', endDate);
 
             if (!isOwner && sucursalId) {
                 query = query.eq('sucursal_id', sucursalId);
@@ -224,10 +314,16 @@ export default function EstadisticasScreen() {
         } finally {
             setServicesLoading(false);
         }
-    }, [appNegocioId, isOwner, sucursalId, selectedBranchId]);
+    }, [appNegocioId, isOwner, sucursalId, selectedBranchId, currentDate, viewMode]);
 
     useEffect(() => { loadRevenueData(); }, [loadRevenueData]);
     useEffect(() => { loadServicesData(); }, [loadServicesData]);
+    useFocusEffect(
+        useCallback(() => {
+            loadRevenueData();
+            loadServicesData();
+        }, [loadRevenueData, loadServicesData])
+    );
 
     const getDateRange = (date: Date, mode: string) => {
         const d = new Date(date);
@@ -309,16 +405,16 @@ export default function EstadisticasScreen() {
 
     return (
         <KyrosScreen title="Estadísticas">
-            <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40, paddingHorizontal: 12 }}>
+            <ScrollView style={[styles.container, { backgroundColor: palette.background }]} contentContainerStyle={{ paddingBottom: 40, paddingHorizontal: 12 }}>
 
                 {/* Date Controls (Applies to Revenue & Citas) */}
                 <View style={{ marginTop: 20, marginBottom: 10, alignSelf: 'center', width: '100%', maxWidth: 600 }}>
-                    <View style={styles.pillContainer}>
+                    <View style={[styles.pillContainer, { backgroundColor: palette.surfaceRaised }]}>
                         {(['day', 'week', 'month'] as const).map((mode) => (
                             <TouchableOpacity key={mode} onPress={() => { setViewMode(mode); setCurrentDate(new Date()); }}
-                                style={[styles.pillBtn, viewMode === mode ? { backgroundColor: '#2A4384' } : { backgroundColor: '#212A40' }]}>
+                                style={[styles.pillBtn, { backgroundColor: viewMode === mode ? theme.colors.primary : palette.surfaceRaised }]}>
                                 {viewMode === mode && <MaterialIcons name="check" size={14} color="#A6C8FF" style={{ marginRight: 4 }} />}
-                                <Text style={{ color: viewMode === mode ? '#A6C8FF' : '#9AA6B8', fontWeight: viewMode === mode ? 'bold' : 'normal' }}>
+                                <Text style={{ color: viewMode === mode ? '#ffffff' : palette.textMuted, fontWeight: viewMode === mode ? 'bold' : 'normal' }}>
                                     {mode === 'day' ? 'Día' : mode === 'week' ? 'Semana' : 'Mes'}
                                 </Text>
                             </TouchableOpacity>
@@ -326,11 +422,11 @@ export default function EstadisticasScreen() {
                     </View>
                     <View style={styles.navContainer}>
                         <TouchableOpacity onPress={() => navigatePeriod('prev')} style={styles.iconBtn}>
-                            <MaterialIcons name="chevron-left" size={28} color="#fff" />
+                            <MaterialIcons name="chevron-left" size={28} color={palette.text} />
                         </TouchableOpacity>
-                        <Text style={[styles.dateLabel, { color: '#fff' }]}>{formatPeriodLabel()}</Text>
+                        <Text style={[styles.dateLabel, { color: palette.text }]}>{formatPeriodLabel()}</Text>
                         <TouchableOpacity onPress={() => navigatePeriod('next')} style={styles.iconBtn}>
-                            <MaterialIcons name="chevron-right" size={28} color="#fff" />
+                            <MaterialIcons name="chevron-right" size={28} color={palette.text} />
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -340,9 +436,9 @@ export default function EstadisticasScreen() {
                         {/* ═══════════ Ingresos Estimados (Owner Only) ═══════════ */}
                         <KyrosCard style={styles.fullWidth}>
                             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                                <Text variant="titleMedium" style={[styles.cardTitle, { marginBottom: 0 }]}>Ingresos Estimados</Text>
-                                <TouchableOpacity onPress={() => setFullScreenChart('revenue')} style={{ padding: 4, backgroundColor: '#334155', borderRadius: 8 }}>
-                                    <MaterialIcons name="fullscreen" size={24} color="#e2e8f0" />
+                                <Text variant="titleMedium" style={[styles.cardTitle, { marginBottom: 0, color: palette.textStrong }]}>Ingresos Estimados</Text>
+                                <TouchableOpacity onPress={() => setFullScreenChart('revenue')} style={{ padding: 4, backgroundColor: palette.surfaceRaised, borderRadius: 8 }}>
+                                    <MaterialIcons name="fullscreen" size={24} color={palette.text} />
                                 </TouchableOpacity>
                             </View>
                             
@@ -355,7 +451,7 @@ export default function EstadisticasScreen() {
                                     selectedValue={revenueBranchId}
                                     onValueChange={(val) => setRevenueBranchId(val)}
                                     icon="store"
-                                    style={{ backgroundColor: '#1E293B', borderColor: '#334155' }}
+                                    style={{ backgroundColor: palette.surfaceRaised, borderColor: palette.border }}
                                 />
                             </View>
                             {loading ? (
@@ -375,7 +471,7 @@ export default function EstadisticasScreen() {
                                                 return (
                                                     <View key={index} style={styles.barWrapper}>
                                                         <View style={styles.barSpace}>
-                                                            <Text style={{ color: '#fff', fontSize: 10, marginBottom: 4 }}>${data.value}</Text>
+                                                            <Text style={{ color: palette.text, fontSize: 10, marginBottom: 4 }}>${data.value}</Text>
                                                             <View style={[styles.bar, { height: `${heightPercentage}%`, backgroundColor: '#10b981' }]} />
                                                         </View>
                                                         <Text style={styles.barLabel}>{data.name}</Text>
@@ -387,16 +483,16 @@ export default function EstadisticasScreen() {
                                 </View>
                             )}
                             <View style={{ alignItems: 'center', marginTop: 10, marginBottom: 10 }}>
-                                <Text style={{ color: '#10b981', fontSize: 24, fontWeight: 'bold' }}>Total Generado: ${revenueTotal}</Text>
+                                <Text style={{ color: palette.successText, fontSize: 24, fontWeight: 'bold' }}>Total Generado: ${revenueTotal}</Text>
                             </View>
                         </KyrosCard>
 
                         {/* ═══════════ Citas por Sucursal (Owner Only) ═══════════ */}
                         <KyrosCard style={isTabletOrWeb ? styles.halfWidth : styles.fullWidth}>
                             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                                <Text variant="titleMedium" style={[styles.cardTitle, { marginBottom: 0 }]}>Citas por Sucursal</Text>
-                                <TouchableOpacity onPress={() => setFullScreenChart('citas')} style={{ padding: 4, backgroundColor: '#334155', borderRadius: 8 }}>
-                                    <MaterialIcons name="fullscreen" size={24} color="#e2e8f0" />
+                                <Text variant="titleMedium" style={[styles.cardTitle, { marginBottom: 0, color: palette.textStrong }]}>Citas por Sucursal</Text>
+                                <TouchableOpacity onPress={() => setFullScreenChart('citas')} style={{ padding: 4, backgroundColor: palette.surfaceRaised, borderRadius: 8 }}>
+                                    <MaterialIcons name="fullscreen" size={24} color={palette.text} />
                                 </TouchableOpacity>
                             </View>
                             {loading ? (
@@ -416,7 +512,7 @@ export default function EstadisticasScreen() {
                                                 return (
                                                     <View key={index} style={styles.barWrapper}>
                                                         <View style={styles.barSpace}>
-                                                            <Text style={{ color: '#fff', fontSize: 10, marginBottom: 4 }}>{data.value}</Text>
+                                                            <Text style={{ color: palette.text, fontSize: 10, marginBottom: 4 }}>{data.value}</Text>
                                                             <View style={[styles.bar, { height: `${heightPercentage}%`, backgroundColor: '#3b82f6' }]} />
                                                         </View>
                                                         <Text style={styles.barLabel}>{data.name}</Text>
@@ -430,44 +526,23 @@ export default function EstadisticasScreen() {
                         </KyrosCard>
 
                         {/* ═══════════ Servicios Más Elegidos (General) (Owner Only) ═══════════ */}
-                        <KyrosCard style={isTabletOrWeb ? styles.halfWidth : styles.fullWidth}>
-                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                                <Text variant="titleMedium" style={[styles.cardTitle, { marginBottom: 0 }]}>Servicios Más Elegidos (General)</Text>
-                                <TouchableOpacity onPress={() => setFullScreenChart('globalServices')} style={{ padding: 4, backgroundColor: '#334155', borderRadius: 8 }}>
-                                    <MaterialIcons name="fullscreen" size={24} color="#e2e8f0" />
-                                </TouchableOpacity>
-                            </View>
-                            {servicesLoading ? (
-                                <ActivityIndicator style={{ marginVertical: 30 }} />
-                            ) : (
-                                <View style={styles.donutRowLayout}>
-                                    <View style={styles.donutContainer}>
-                                        <DonutChart data={globalServicesData} size={150} />
-                                    </View>
-                                    <View style={styles.legendContainerFlex}>
-                                        <Text style={{ color: '#fff', fontWeight: 'bold', marginBottom: 8 }}>Servicios</Text>
-                                        {globalServicesData.map((item, idx) => {
-                                            const pct = totalGlobalServices > 0 ? Math.round((item.count / totalGlobalServices) * 100) : 0;
-                                            return (
-                                                <View key={idx} style={styles.legendRow}>
-                                                    <View style={[styles.legendColorBox, { backgroundColor: item.color }]} />
-                                                    <Text numberOfLines={1} style={styles.legendText}>
-                                                        {item.name} ({pct}%)
-                                                    </Text>
-                                                </View>
-                                            );
-                                        })}
-                                    </View>
-                                </View>
-                            )}
-                        </KyrosCard>
+                        <View style={isTabletOrWeb ? styles.halfWidth : styles.fullWidth}>
+                            <ServiceHighlightsCard
+                                title="Servicios Más Elegidos (General)"
+                                data={globalServicesData}
+                                loading={servicesLoading}
+                                total={totalGlobalServices}
+                                onOpenFull={() => setFullScreenChart('globalServices')}
+                                compact
+                            />
+                        </View>
 
                         {/* ═══════════ Servicios por Sucursal (Owner Only) ═══════════ */}
                         <KyrosCard style={styles.fullWidth}>
                             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                                <Text variant="titleMedium" style={[styles.cardTitle, { marginBottom: 0 }]}>Servicios por Sucursal</Text>
-                                <TouchableOpacity onPress={() => setFullScreenChart('branchServices')} style={{ padding: 4, backgroundColor: '#334155', borderRadius: 8 }}>
-                                    <MaterialIcons name="fullscreen" size={24} color="#e2e8f0" />
+                                <Text variant="titleMedium" style={[styles.cardTitle, { marginBottom: 0, color: palette.textStrong }]}>Servicios por Sucursal</Text>
+                                <TouchableOpacity onPress={() => setFullScreenChart('branchServices')} style={{ padding: 4, backgroundColor: palette.surfaceRaised, borderRadius: 8 }}>
+                                    <MaterialIcons name="fullscreen" size={24} color={palette.text} />
                                 </TouchableOpacity>
                             </View>
                             <View style={{ marginBottom: 16 }}>
@@ -479,7 +554,7 @@ export default function EstadisticasScreen() {
                                     selectedValue={selectedBranchId}
                                     onValueChange={(val) => setSelectedBranchId(val)}
                                     icon="store"
-                                    style={{ backgroundColor: '#1E293B', borderColor: '#334155' }}
+                                    style={{ backgroundColor: palette.surfaceRaised, borderColor: palette.border }}
                                 />
                             </View>
 
@@ -494,11 +569,11 @@ export default function EstadisticasScreen() {
                                         const wPct = (item.count / maxBCount) * 100;
                                         return (
                                             <View key={idx} style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                                <Text style={{ width: 100, color: '#94a3b8', fontSize: 11, marginRight: 8 }} numberOfLines={1}>{item.name}</Text>
-                                                <View style={{ flex: 1, height: 16, backgroundColor: '#1E293B', borderRadius: 4, overflow: 'hidden' }}>
+                                                <Text style={{ width: 100, color: palette.textMuted, fontSize: 11, marginRight: 8 }} numberOfLines={1}>{item.name}</Text>
+                                                <View style={{ flex: 1, height: 16, backgroundColor: palette.surfaceRaised, borderRadius: 4, overflow: 'hidden' }}>
                                                     <View style={{ width: `${Math.max(wPct, 2)}%`, height: '100%', backgroundColor: item.color, borderRadius: 4 }} />
                                                 </View>
-                                                <Text style={{ width: 20, color: '#fff', fontSize: 11, marginLeft: 8, textAlign: 'right' }}>{item.count}</Text>
+                                                <Text style={{ width: 20, color: palette.text, fontSize: 11, marginLeft: 8, textAlign: 'right' }}>{item.count}</Text>
                                             </View>
                                         );
                                     })}
@@ -510,49 +585,29 @@ export default function EstadisticasScreen() {
                 ) : (
                     <View style={styles.colFlow}>
                         {/* ═══════════ Servicios Más Elegidos (Branch Only) ═══════════ */}
-                        <KyrosCard style={styles.fullWidth}>
-                            <Text variant="titleMedium" style={styles.cardTitle}>Servicios Más Elegidos</Text>
-                            {servicesLoading ? (
-                                <ActivityIndicator style={{ marginVertical: 30 }} />
-                            ) : globalServicesData.length === 0 ? (
-                                <Text style={styles.emptyText}>Sin datos de servicios</Text>
-                            ) : (
-                                <View style={styles.donutRowLayout}>
-                                    <View style={styles.donutContainer}>
-                                        <DonutChart data={globalServicesData} size={150} />
-                                    </View>
-                                    <View style={styles.legendContainerFlex}>
-                                        <Text style={{ color: '#fff', fontWeight: 'bold', marginBottom: 8 }}>Servicios</Text>
-                                        {globalServicesData.map((item, idx) => {
-                                            const pct = totalGlobalServices > 0 ? Math.round((item.count / totalGlobalServices) * 100) : 0;
-                                            return (
-                                                <View key={idx} style={styles.legendRow}>
-                                                    <View style={[styles.legendColorBox, { backgroundColor: item.color }]} />
-                                                    <Text numberOfLines={1} style={styles.legendText}>
-                                                        {item.name} ({pct}%)
-                                                    </Text>
-                                                </View>
-                                            );
-                                        })}
-                                    </View>
-                                </View>
-                            )}
-                        </KyrosCard>
+                        <View style={styles.fullWidth}>
+                            <ServiceHighlightsCard
+                                title="Servicios Más Elegidos"
+                                data={globalServicesData}
+                                loading={servicesLoading}
+                                total={totalGlobalServices}
+                            />
+                        </View>
                     </View>
                 )}
             </ScrollView>
 
             <RNModal visible={fullScreenChart !== null} animationType="slide" onRequestClose={() => setFullScreenChart(null)}>
-                <View style={{ flex: 1, backgroundColor: '#0F172A', padding: 20 }}>
+                <View style={{ flex: 1, backgroundColor: palette.background, padding: 20 }}>
                     <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 20 }}>
-                        <TouchableOpacity onPress={() => setFullScreenChart(null)} style={{ padding: 8, backgroundColor: '#334155', borderRadius: 8 }}>
-                            <MaterialIcons name="close" size={24} color="#e2e8f0" />
+                        <TouchableOpacity onPress={() => setFullScreenChart(null)} style={{ padding: 8, backgroundColor: palette.surfaceRaised, borderRadius: 8 }}>
+                            <MaterialIcons name="close" size={24} color={palette.text} />
                         </TouchableOpacity>
                     </View>
                     <View style={{ flex: 1, justifyContent: 'center' }}>
                         {fullScreenChart === 'revenue' && (
                             <KyrosCard style={{ flex: 1 }}>
-                                <Text variant="titleLarge" style={[styles.cardTitle, { textAlign: 'center' }]}>Ingresos Estimados</Text>
+                                <Text variant="titleLarge" style={[styles.cardTitle, { textAlign: 'center', color: palette.textStrong }]}>Ingresos Estimados</Text>
                                 {revenueData.length === 0 && !loading ? (
                                     <Text style={styles.emptyText}>Sin ingresos para este período</Text>
                                 ) : (
@@ -585,7 +640,7 @@ export default function EstadisticasScreen() {
                         )}
                         {fullScreenChart === 'citas' && (
                             <KyrosCard style={{ flex: 1 }}>
-                                <Text variant="titleLarge" style={[styles.cardTitle, { textAlign: 'center' }]}>Citas por Sucursal</Text>
+                                <Text variant="titleLarge" style={[styles.cardTitle, { textAlign: 'center', color: palette.textStrong }]}>Citas por Sucursal</Text>
                                 {citasPorSucursalData.length === 0 && !loading ? (
                                     <Text style={styles.emptyText}>Sin datos para este período</Text>
                                 ) : (
@@ -619,34 +674,18 @@ export default function EstadisticasScreen() {
                         {/* Servicios Más Elegidos (Global) */}
                         {fullScreenChart === 'globalServices' && (
                             <KyrosCard style={{ flex: 1 }}>
-                                <Text variant="titleLarge" style={[styles.cardTitle, { textAlign: 'center', marginBottom: 40 }]}>
-                                    Servicios Más Elegidos (General)
-                                </Text>
-                                <View style={[styles.donutRowLayout, { flexDirection: 'column', gap: 40 }]}>
-                                    <View style={styles.donutContainer}>
-                                        <DonutChart data={globalServicesData} size={250} />
-                                    </View>
-                                    <View style={[styles.legendContainerFlex, { width: '100%', alignItems: 'center' }]}>
-                                        <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 18, marginBottom: 16 }}>Servicios</Text>
-                                        {globalServicesData.map((item, idx) => {
-                                            const pct = totalGlobalServices > 0 ? Math.round((item.count / totalGlobalServices) * 100) : 0;
-                                            return (
-                                                <View key={idx} style={[styles.legendRow, { marginBottom: 12, justifyContent: 'flex-start', width: 250 }]}>
-                                                    <View style={[styles.legendColorBox, { backgroundColor: item.color, width: 20, height: 20, marginRight: 12 }]} />
-                                                    <Text style={[styles.legendText, { fontSize: 16 }]}>
-                                                        {item.name} ({pct}%) • {item.count} citas
-                                                    </Text>
-                                                </View>
-                                            );
-                                        })}
-                                    </View>
-                                </View>
+                                <ServiceHighlightsCard
+                                    title="Servicios Más Elegidos (General)"
+                                    data={globalServicesData}
+                                    loading={servicesLoading}
+                                    total={totalGlobalServices}
+                                />
                             </KyrosCard>
                         )}
                         {/* Servicios por Sucursal */}
                         {fullScreenChart === 'branchServices' && (
                             <KyrosCard style={{ flex: 1 }}>
-                                <Text variant="titleLarge" style={[styles.cardTitle, { textAlign: 'center', marginBottom: 30 }]}>
+                                <Text variant="titleLarge" style={[styles.cardTitle, { textAlign: 'center', marginBottom: 30, color: palette.textStrong }]}>
                                     Servicios por Sucursal
                                 </Text>
                                 <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}>
@@ -727,4 +766,119 @@ const styles = StyleSheet.create({
     navContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 10 },
     iconBtn: { padding: 8 },
     dateLabel: { fontSize: 15, fontWeight: 'bold', width: 200, textAlign: 'center', textTransform: 'capitalize' },
+    servicesCardHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        marginBottom: 16,
+    },
+    servicesCardSubtitle: {
+        color: '#94a3b8',
+        fontSize: 12,
+    },
+    servicesCardExpand: {
+        padding: 6,
+        backgroundColor: '#334155',
+        borderRadius: 10,
+    },
+    servicesHero: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 16,
+        marginBottom: 20,
+    },
+    servicesHeroCompact: {
+        alignItems: 'flex-start',
+    },
+    servicesHeroSummary: {
+        flex: 1,
+        backgroundColor: '#1E293B',
+        borderRadius: 18,
+        borderWidth: 1,
+        borderColor: '#334155',
+        padding: 16,
+    },
+    servicesHeroLabel: {
+        color: '#94a3b8',
+        fontSize: 11,
+        textTransform: 'uppercase',
+        letterSpacing: 0.6,
+        marginBottom: 6,
+    },
+    servicesHeroTitle: {
+        color: '#fff',
+        fontSize: 18,
+        fontWeight: '700',
+        marginBottom: 6,
+    },
+    servicesHeroMeta: {
+        color: '#38bdf8',
+        fontSize: 13,
+        fontWeight: '600',
+    },
+    servicesDonutWrap: {
+        width: 170,
+        height: 170,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    servicesDonutCenter: {
+        position: 'absolute',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    servicesDonutCenterValue: {
+        color: '#fff',
+        fontSize: 24,
+        fontWeight: '800',
+    },
+    servicesDonutCenterLabel: {
+        color: '#94a3b8',
+        fontSize: 11,
+        textTransform: 'uppercase',
+        letterSpacing: 0.6,
+    },
+    servicesRanking: {
+        gap: 12,
+    },
+    servicesRankingRow: {
+        gap: 6,
+    },
+    servicesRankingTop: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        gap: 12,
+    },
+    servicesRankingNameWrap: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+    },
+    servicesRankingName: {
+        color: '#e2e8f0',
+        fontSize: 13,
+        flex: 1,
+    },
+    servicesRankingValue: {
+        color: '#94a3b8',
+        fontSize: 12,
+        fontWeight: '600',
+    },
+    servicesRankingTrack: {
+        height: 10,
+        backgroundColor: '#1E293B',
+        borderRadius: 999,
+        overflow: 'hidden',
+    },
+    servicesRankingFill: {
+        height: '100%',
+        borderRadius: 999,
+    },
+    servicesEmptyState: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 24,
+    },
 });

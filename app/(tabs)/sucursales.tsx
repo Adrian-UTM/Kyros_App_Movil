@@ -1,9 +1,8 @@
 import React, { useState, useCallback } from 'react';
-import { StyleSheet, View, ScrollView, Alert } from 'react-native';
-import { Text, List, Divider, useTheme, ActivityIndicator, DataTable } from 'react-native-paper';
+import { StyleSheet, View, ScrollView, Alert, TouchableOpacity } from 'react-native';
+import { Text, useTheme, ActivityIndicator } from 'react-native-paper';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
-import { TouchableOpacity } from 'react-native';
 import KyrosScreen from '../../components/KyrosScreen';
 import KyrosCard from '../../components/KyrosCard';
 import KyrosButton from '../../components/KyrosButton';
@@ -24,23 +23,6 @@ interface Sucursal {
     descanso_fin?: string | null;
     dias_abiertos?: number[] | null;
 }
-
-const formatTime12 = (time24?: string | null) => {
-    if (!time24) return '';
-    const [h, m] = time24.split(':').map(Number);
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    const h12 = h > 12 ? h - 12 : (h === 0 ? 12 : h);
-    return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
-};
-
-const formatSchedule = (suc: Sucursal) => {
-    if (!suc.hora_apertura || !suc.hora_cierre) return 'Sin horario configurado';
-    let text = `${formatTime12(suc.hora_apertura)} a ${formatTime12(suc.hora_cierre)}`;
-    if (suc.descanso_inicio && suc.descanso_fin) {
-        text += ` (Descanso: ${formatTime12(suc.descanso_inicio)} a ${formatTime12(suc.descanso_fin)})`;
-    }
-    return text;
-};
 
 export default function SucursalesScreen() {
     const theme = useTheme();
@@ -79,7 +61,7 @@ export default function SucursalesScreen() {
         } finally {
             setLoading(false);
         }
-    }, [negocioId]);
+    }, [negocioId, rol, sucursalId]);
 
     useFocusEffect(
         useCallback(() => {

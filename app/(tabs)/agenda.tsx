@@ -471,7 +471,7 @@ export default function AgendaScreen() {
                     {/* Encabezado y Filtros Movidos dentro del Scroll para maximizar espacio */}
                     <View style={{ gap: 12, marginBottom: 8 }}>
                         <View style={[styles.headerContainer, { backgroundColor: palette.surface, borderColor: palette.border, borderRadius: 16 }]}>
-                            <Text variant="headlineSmall" style={styles.headerTitle} numberOfLines={1}>
+                            <Text variant="headlineSmall" style={[styles.headerTitle, { color: palette.textStrong }]} numberOfLines={1}>
                                 Agenda {formatDateTitle(selectedDate)}
                             </Text>
 
@@ -567,7 +567,34 @@ export default function AgendaScreen() {
                                     textDayHeaderFontWeight: '600',
                                     textDayFontSize: 15,
                                     textMonthFontSize: 16,
-                                    textDayHeaderFontSize: 13
+                                    textDayHeaderFontSize: 13,
+                                    'stylesheet.calendar.header': {
+                                        monthText: {
+                                            color: palette.textStrong,
+                                            fontSize: 16,
+                                            fontWeight: '800',
+                                        },
+                                        dayHeader: {
+                                            color: palette.textMuted,
+                                            fontSize: 13,
+                                            fontWeight: '600',
+                                        },
+                                    },
+                                    'stylesheet.day.basic': {
+                                        base: {
+                                            width: 36,
+                                            height: 36,
+                                            alignItems: 'center',
+                                        },
+                                        text: {
+                                            color: palette.text,
+                                            fontSize: 15,
+                                            fontWeight: '500',
+                                        },
+                                        today: {
+                                            color: theme.colors.primary,
+                                        },
+                                    }
                                 }}
                             />
 

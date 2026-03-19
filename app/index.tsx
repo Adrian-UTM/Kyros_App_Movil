@@ -88,7 +88,7 @@ export default function LoginScreen() {
 
   const inputTheme = {
     colors: {
-      onSurfaceVariant: '#94a3b8',
+      onSurfaceVariant: palette.textMuted,
       outline: 'transparent',
       primary: palette.primary,
     },
@@ -111,9 +111,11 @@ export default function LoginScreen() {
               width={280}
               height={90}
               respectSystemTheme
-              containerStyle={palette.isDark ? styles.logoPlate : undefined}
+              containerStyle={styles.logoPlate}
             />
-            <Text style={[styles.tagline, { color: palette.textMuted }]}>Gestión inteligente para tu negocio</Text>
+            <Text style={[styles.tagline, { color: palette.isDark ? '#c4d1e3' : '#48627f' }]}>
+              Gestión inteligente para tu negocio
+            </Text>
           </Animated.View>
 
           {/* Form */}
@@ -131,7 +133,7 @@ export default function LoginScreen() {
               autoCapitalize="none"
               textColor={palette.text}
               underlineColor="transparent"
-              activeUnderlineColor="#3b82f6"
+              activeUnderlineColor="transparent"
               left={<TextInput.Icon icon="email-outline" color={palette.icon} />}
               theme={inputTheme}
             />
@@ -147,7 +149,7 @@ export default function LoginScreen() {
               style={[styles.input, { backgroundColor: palette.inputBg }]}
               textColor={palette.text}
               underlineColor="transparent"
-              activeUnderlineColor="#3b82f6"
+              activeUnderlineColor="transparent"
               theme={inputTheme}
             />
 
@@ -243,11 +245,15 @@ const styles = StyleSheet.create({
   },
   logoPlate: {
     marginBottom: 12,
+    alignSelf: 'center',
   },
   tagline: {
     color: '#94a3b8',
-    fontSize: 14,
-    letterSpacing: 0.5,
+    fontSize: 15,
+    letterSpacing: 0.2,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: 2,
   },
   formContainer: {
     marginBottom: 28,

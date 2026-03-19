@@ -103,8 +103,8 @@ export default function RegisterScreen() {
 
     const inputTheme = {
         colors: {
-            onSurfaceVariant: '#94a3b8',
-            outline: 'transparent',
+            onSurfaceVariant: palette.textMuted,
+            outline: palette.border,
             primary: palette.primary,
         },
         roundness: 14,
@@ -135,7 +135,7 @@ export default function RegisterScreen() {
                                 width={240}
                                 height={75}
                                 respectSystemTheme
-                                containerStyle={palette.isDark ? styles.logoPlate : undefined}
+                                containerStyle={styles.logoPlate}
                             />
                             <Text style={[styles.title, { color: palette.text }]}>Crear Cuenta</Text>
                             <Text style={[styles.subtitle, { color: palette.textMuted }]}>Únete a la comunidad de Kyros</Text>
@@ -175,7 +175,7 @@ export default function RegisterScreen() {
                                 value={name}
                                 onChangeText={(text) => { setName(text); setError(''); setSuccessMessage(''); }}
                                 mode="flat"
-                                style={[styles.input, { backgroundColor: palette.inputBg }]}
+                                style={[styles.input, { backgroundColor: palette.inputBg, borderColor: palette.border }]}
                                 autoCapitalize="words"
                                 textColor={palette.text}
                                 underlineColor="transparent"
@@ -189,7 +189,7 @@ export default function RegisterScreen() {
                                 value={email}
                                 onChangeText={(text) => { setEmail(text); setError(''); setSuccessMessage(''); }}
                                 mode="flat"
-                                style={[styles.input, { backgroundColor: palette.inputBg }]}
+                                style={[styles.input, { backgroundColor: palette.inputBg, borderColor: palette.border }]}
                                 keyboardType="email-address"
                                 autoCapitalize="none"
                                 textColor={palette.text}
@@ -207,7 +207,7 @@ export default function RegisterScreen() {
                                 secureTextEntry={hidePassword}
                                 right={<TextInput.Icon icon={hidePassword ? "eye-outline" : "eye-off-outline"} color={palette.icon} onPress={() => setHidePassword(!hidePassword)} />}
                                 left={<TextInput.Icon icon="lock-outline" color={palette.icon} />}
-                                style={[styles.input, { backgroundColor: palette.inputBg }]}
+                                style={[styles.input, { backgroundColor: palette.inputBg, borderColor: palette.border }]}
                                 textColor={palette.text}
                                 underlineColor="transparent"
                                 activeUnderlineColor="#3b82f6"
@@ -223,7 +223,7 @@ export default function RegisterScreen() {
                                 mode="flat"
                                 secureTextEntry={hidePassword}
                                 left={<TextInput.Icon icon="lock-check-outline" color={palette.icon} />}
-                                style={[styles.input, { backgroundColor: palette.inputBg }]}
+                                style={[styles.input, { backgroundColor: palette.inputBg, borderColor: palette.border }]}
                                 textColor={palette.text}
                                 underlineColor="transparent"
                                 activeUnderlineColor="#3b82f6"
@@ -329,6 +329,7 @@ const styles = StyleSheet.create({
     },
     logoPlate: {
         marginBottom: 16,
+        alignSelf: 'center',
     },
     title: {
         color: '#f1f5f9',
@@ -391,6 +392,7 @@ const styles = StyleSheet.create({
         borderRadius: 14,
         fontSize: 15,
         overflow: 'hidden',
+        borderWidth: 1,
     },
     helperText: {
         color: '#475569',

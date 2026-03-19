@@ -429,6 +429,20 @@ export default function PerfilScreen() {
         }
     };
 
+    const handleHelpPress = () => {
+        Alert.alert(
+            'Ayuda',
+            'Correo de soporte oficial:\nkyros.soporte.oficial@gmail.com',
+            [
+                { text: 'Cerrar', style: 'cancel' },
+                {
+                    text: 'Enviar correo',
+                    onPress: () => Linking.openURL('mailto:kyros.soporte.oficial@gmail.com').catch(() => {})
+                }
+            ]
+        );
+    };
+
     return (
         <>
             <KyrosScreen title={rol === 'sucursal' ? 'Mi Sucursal' : 'Mi Perfil'}>
@@ -762,6 +776,7 @@ export default function PerfilScreen() {
                         title="Ayuda"
                         left={props => <List.Icon {...props} icon="help-circle" />}
                         right={props => <List.Icon {...props} icon="chevron-right" />}
+                        onPress={handleHelpPress}
                     />
                 </KyrosCard>
 

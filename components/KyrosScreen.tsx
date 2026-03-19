@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, StatusBar, TouchableOpacity, Modal, Linking } from 'react-native';
+import { View, StyleSheet, StatusBar, TouchableOpacity, Modal, Linking, Platform } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,13 +19,15 @@ export default function KyrosScreen({ children, title }: KyrosScreenProps) {
     const palette = useKyrosPalette();
     const responsive = useResponsiveLayout();
     const [notificationsVisible, setNotificationsVisible] = useState(false);
-    const [notificationsStatus, setNotificationsStatus] = useState<'loading' | 'granted' | 'denied'>('loading');
+    const [notificationsStatus, setNotificationsStatus] = useState<'loading' | 'granted' | 'denied' | 'undetermined'>('loading');
     const [notificationsBusy, setNotificationsBusy] = useState(false);
 
     const refreshNotificationsStatus = React.useCallback(async () => {
         try {
             const { status } = await Notifications.getPermissionsAsync();
-            setNotificationsStatus(status === 'granted' ? 'granted' : 'denied');
+            if (status === 'granted') setNotificationsStatus('granted');
+            else if (status === 'denied') setNotificationsStatus('denied');
+            else setNotificationsStatus('undetermined');
         } catch {
             setNotificationsStatus('denied');
         }
@@ -39,7 +41,9 @@ export default function KyrosScreen({ children, title }: KyrosScreenProps) {
             try {
                 const { status } = await Notifications.getPermissionsAsync();
                 if (mounted) {
-                    setNotificationsStatus(status === 'granted' ? 'granted' : 'denied');
+                    if (status === 'granted') setNotificationsStatus('granted');
+                    else if (status === 'denied') setNotificationsStatus('denied');
+                    else setNotificationsStatus('undetermined');
                 }
             } catch {
                 if (mounted) {
@@ -56,8 +60,16 @@ export default function KyrosScreen({ children, title }: KyrosScreenProps) {
     const handleEnableNotifications = async () => {
         setNotificationsBusy(true);
         try {
+            if (Platform.OS === 'android') {
+                await Notifications.setNotificationChannelAsync('default', {
+                    name: 'default',
+                    importance: Notifications.AndroidImportance.DEFAULT,
+                });
+            }
             const { status } = await Notifications.requestPermissionsAsync();
-            setNotificationsStatus(status === 'granted' ? 'granted' : 'denied');
+            if (status === 'granted') setNotificationsStatus('granted');
+            else if (status === 'denied') setNotificationsStatus('denied');
+            else setNotificationsStatus('undetermined');
         } catch {
             setNotificationsStatus('denied');
         } finally {
@@ -112,10 +124,22 @@ export default function KyrosScreen({ children, title }: KyrosScreenProps) {
                             Las alertas en tiempo real se envían a la bandeja del teléfono. Aún no hay un historial interno para mostrar aquí.
                         </Text>
                         <View style={[styles.permissionPill, {
-                            backgroundColor: notificationsStatus === 'granted' ? palette.successBg : notificationsStatus === 'denied' ? palette.warningBg : palette.surfaceAlt,
+                            backgroundColor: notificationsStatus === 'granted'
+                                ? palette.successBg
+                                : notificationsStatus === 'denied'
+                                    ? palette.warningBg
+                                    : palette.surfaceAlt,
                         }]}>
                             <MaterialIcons
-                                name={notificationsStatus === 'granted' ? 'check-circle' : notificationsStatus === 'denied' ? 'notifications-off' : 'hourglass-empty'}
+                                name={
+                                    notificationsStatus === 'granted'
+                                        ? 'check-circle'
+                                        : notificationsStatus === 'denied'
+                                            ? 'notifications-off'
+                                            : notificationsStatus === 'undetermined'
+                                                ? 'notifications'
+                                                : 'hourglass-empty'
+                                }
                                 size={16}
                                 color={notificationsStatus === 'granted' ? palette.successText : notificationsStatus === 'denied' ? palette.warningText : palette.textSoft}
                             />
@@ -126,6 +150,8 @@ export default function KyrosScreen({ children, title }: KyrosScreenProps) {
                                     ? 'Permiso de notificaciones activo'
                                     : notificationsStatus === 'denied'
                                         ? 'Permiso no concedido'
+                                        : notificationsStatus === 'undetermined'
+                                            ? 'Permiso pendiente de activar'
                                         : 'Verificando permiso...'}
                             </Text>
                         </View>

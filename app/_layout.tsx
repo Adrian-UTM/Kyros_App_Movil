@@ -19,11 +19,11 @@ const lightTheme = {
     ...MD3LightTheme.colors,
     primary: '#1E66FF', // Azul Corporativo (Kyros)
     secondary: '#1565c0',
-    background: '#edf2f7',
+    background: '#dbe5ef',
     surface: '#f8fafc',
     onBackground: '#111111', // Dark text on background
     onSurface: '#111111', // Dark text on surface
-    outline: '#d2dce8',
+    outline: '#a8b6c7',
   },
 };
 

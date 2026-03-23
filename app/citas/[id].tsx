@@ -256,6 +256,15 @@ const dpStyles = StyleSheet.create({
 // ============================================================
 interface Servicio { id: number; nombre: string; precio_base: number; duracion_aprox_minutos: number; }
 interface Empleado { id: number; nombre: string; sucursal_id: number | null; servicios_ids?: number[]; disponible?: boolean; ocupadoHasta?: string; }
+interface ServicioDetalleCita {
+    servicio_id: number;
+    precio_actual: number | null;
+    servicios?: {
+        nombre?: string | null;
+        precio_base?: number | null;
+        duracion_aprox_minutos?: number | null;
+    }[] | null;
+}
 
 // ============================================================
 // COMPONENTE PRINCIPAL
@@ -272,14 +281,20 @@ export default function EditarCitaScreen() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [notFound, setNotFound] = useState(false);
+    const [estadoCita, setEstadoCita] = useState('');
     const [clienteNombre, setClienteNombre] = useState('');
+    const [empleadoNombreCita, setEmpleadoNombreCita] = useState('');
+    const [sucursalNombreCita, setSucursalNombreCita] = useState('');
     const [selectedSucursalId, setSelectedSucursalId] = useState<number | null>(null);
     const [selectedServiciosIds, setSelectedServiciosIds] = useState<number[]>([]);
     const [empleadoId, setEmpleadoId] = useState<number | null>(null);
     const [fechaSeleccionada, setFechaSeleccionada] = useState('');
     const [hora, setHora] = useState('');
+    const [horaFin, setHoraFin] = useState('');
+    const [montoTotalCita, setMontoTotalCita] = useState<number | null>(null);
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [servicios, setServicios] = useState<Servicio[]>([]);
+    const [serviciosDetalleCita, setServiciosDetalleCita] = useState<ServicioDetalleCita[]>([]);
     const [empleados, setEmpleados] = useState<Empleado[]>([]);
     const [ocupacion, setOcupacion] = useState<Record<number, string | null>>({});
     const [showDatePicker, setShowDatePicker] = useState(false);
@@ -287,6 +302,27 @@ export default function EditarCitaScreen() {
     const [schedule, setSchedule] = useState<any>(null);
 
     const serviciosSeleccionados = servicios.filter(s => selectedServiciosIds.includes(s.id));
+    const serviciosResumen = useMemo(() => {
+        if (serviciosDetalleCita.length > 0) {
+            return serviciosDetalleCita.map((item) => {
+                const servicioCatalogo = servicios.find((servicio) => servicio.id === item.servicio_id);
+                const servicioRelacionado = Array.isArray(item.servicios) ? item.servicios[0] : item.servicios;
+                return {
+                    id: item.servicio_id,
+                    nombre: servicioRelacionado?.nombre || servicioCatalogo?.nombre || 'Servicio',
+                    precio: item.precio_actual ?? servicioRelacionado?.precio_base ?? servicioCatalogo?.precio_base ?? 0,
+                    duracion: servicioRelacionado?.duracion_aprox_minutos ?? servicioCatalogo?.duracion_aprox_minutos ?? 30,
+                };
+            });
+        }
+
+        return serviciosSeleccionados.map((servicio) => ({
+            id: servicio.id,
+            nombre: servicio.nombre,
+            precio: servicio.precio_base || 0,
+            duracion: servicio.duracion_aprox_minutos || 30,
+        }));
+    }, [serviciosDetalleCita, servicios, serviciosSeleccionados]);
 
     // Fetch sucursal schedule when selected
     useEffect(() => {
@@ -301,6 +337,15 @@ export default function EditarCitaScreen() {
         };
         fetchSchedule();
     }, [selectedSucursalId]);
+
+    const empleadosFiltrados = empleados.filter(e => {
+        const matchSucursal = !e.sucursal_id || e.sucursal_id === selectedSucursalId;
+        if (!matchSucursal) return false;
+        if (selectedServiciosIds.length > 0 && e.servicios_ids) {
+            return selectedServiciosIds.every(sId => e.servicios_ids!.includes(sId));
+        }
+        return true;
+    });
 
     const checkAvailability = useCallback(async () => {
         if (!fechaSeleccionada || !hora) return;
@@ -331,15 +376,6 @@ export default function EditarCitaScreen() {
         setOcupacion(newOcupacion);
     }, [fechaSeleccionada, hora, serviciosSeleccionados, citaId, empleadosFiltrados]);
 
-    const empleadosFiltrados = empleados.filter(e => {
-        const matchSucursal = !e.sucursal_id || e.sucursal_id === selectedSucursalId;
-        if (!matchSucursal) return false;
-        if (selectedServiciosIds.length > 0 && e.servicios_ids) {
-            return selectedServiciosIds.every(sId => e.servicios_ids!.includes(sId));
-        }
-        return true;
-    });
-
     const loadFormData = useCallback(async () => {
         if (!negocioId) return;
         const { data: servData } = await supabase.from('servicios').select('id, nombre, precio_base, duracion_aprox_minutos').eq('negocio_id', negocioId).eq('activo', true).order('nombre');
@@ -360,7 +396,9 @@ export default function EditarCitaScreen() {
     empleado_id, sucursal_id, cliente_id, monto_total,
     nombre_cliente_manual,
     clientes_bot!cliente_id(nombre),
-    citas_servicios(servicio_id)`)
+    empleados!empleado_id(nombre),
+    sucursales!sucursal_id(nombre),
+    citas_servicios(servicio_id, precio_actual, servicios(nombre, precio_base, duracion_aprox_minutos))`)
                 .eq('id', citaId).eq('negocio_id', negocioId).single();
 
             if (citaErr || !cita) { setNotFound(true); return; }
@@ -373,6 +411,12 @@ export default function EditarCitaScreen() {
             const hh = String(startDate.getHours()).padStart(2, '0');
             const mm = String(startDate.getMinutes()).padStart(2, '0');
             setHora(`${hh}:${mm}`);
+            const endDate = new Date(cita.fecha_hora_fin);
+            const endHours = String(endDate.getHours()).padStart(2, '0');
+            const endMinutes = String(endDate.getMinutes()).padStart(2, '0');
+            setHoraFin(`${endHours}:${endMinutes}`);
+            setEstadoCita(cita.estado || '');
+            setMontoTotalCita(cita.monto_total ?? null);
             setSelectedSucursalId(cita.sucursal_id);
             setEmpleadoId(cita.empleado_id);
 
@@ -380,7 +424,17 @@ export default function EditarCitaScreen() {
             if (clientObj?.nombre) setClienteNombre(clientObj.nombre);
             else if (cita.nombre_cliente_manual) setClienteNombre(cita.nombre_cliente_manual);
 
-            const svcIds = ((cita.citas_servicios || []) as any[]).map((cs: any) => cs.servicio_id);
+            const empleadoObj = cita.empleados as any;
+            if (empleadoObj?.nombre) setEmpleadoNombreCita(empleadoObj.nombre);
+            else if (Array.isArray(empleadoObj) && empleadoObj[0]?.nombre) setEmpleadoNombreCita(empleadoObj[0].nombre);
+
+            const sucursalObj = cita.sucursales as any;
+            if (sucursalObj?.nombre) setSucursalNombreCita(sucursalObj.nombre);
+            else if (Array.isArray(sucursalObj) && sucursalObj[0]?.nombre) setSucursalNombreCita(sucursalObj[0].nombre);
+
+            const detalleServicios = (cita.citas_servicios || []) as ServicioDetalleCita[];
+            setServiciosDetalleCita(detalleServicios);
+            const svcIds = detalleServicios.map((cs) => cs.servicio_id);
             setSelectedServiciosIds(svcIds);
             await loadFormData();
         } catch (err) {
@@ -408,6 +462,25 @@ export default function EditarCitaScreen() {
         const period = h >= 12 ? 'PM' : 'AM';
         const h12 = h > 12 ? h - 12 : h === 0 ? 12 : h;
         return `${h12.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')} ${period}`;
+    };
+
+    const displayDateLabel = (dateValue: string) => {
+        if (!dateValue) return 'Sin fecha';
+        const dateObj = new Date(`${dateValue}T12:00:00`);
+        return dateObj.toLocaleDateString('es-MX', {
+            weekday: 'long',
+            day: '2-digit',
+            month: 'long',
+            year: 'numeric',
+        });
+    };
+
+    const handleGoBack = () => {
+        if (router.canGoBack()) {
+            router.back();
+            return;
+        }
+        router.replace('/(tabs)/agenda');
     };
 
     const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
@@ -519,7 +592,7 @@ export default function EditarCitaScreen() {
 
     if (loading) {
         return (
-            <KyrosScreen title="Editar Cita">
+            <KyrosScreen title="Detalle de Cita">
                 <View style={styles.centerState}>
                     <ActivityIndicator size="large" color={theme.colors.primary} />
                     <Text style={{ color: palette.textMuted, marginTop: 16 }}>Cargando cita...</Text>
@@ -530,11 +603,11 @@ export default function EditarCitaScreen() {
 
     if (notFound) {
         return (
-            <KyrosScreen title="Editar Cita">
+            <KyrosScreen title="Detalle de Cita">
                 <View style={styles.centerState}>
                     <MaterialIcons name="error-outline" size={64} color="#ef4444" />
                     <Text style={{ color: '#ef4444', marginTop: 16, textAlign: 'center' }}>Cita no encontrada</Text>
-                    <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+                    <TouchableOpacity onPress={handleGoBack} style={styles.backBtn}>
                         <Text style={{ color: '#fff', fontWeight: 'bold' }}>Volver</Text>
                     </TouchableOpacity>
                 </View>
@@ -542,12 +615,57 @@ export default function EditarCitaScreen() {
         );
     }
 
-    const totalMinutos = serviciosSeleccionados.reduce((acc, s) => acc + (s.duracion_aprox_minutos || 30), 0);
-    const costoTotal = serviciosSeleccionados.reduce((acc, s) => acc + (s.precio_base || 0), 0);
+    const totalMinutos = serviciosResumen.reduce((acc, servicio) => acc + (servicio.duracion || 30), 0);
+    const costoTotal = serviciosResumen.reduce((acc, servicio) => acc + (servicio.precio || 0), 0);
+    const totalFinal = typeof montoTotalCita === 'number' && montoTotalCita > 0
+        ? montoTotalCita
+        : costoTotal;
+    const isReadOnly = estadoCita === 'completada' || estadoCita === 'cancelada';
+    const screenTitle = isReadOnly ? 'Detalle de Cita' : 'Editar Cita';
+    const empleadoSeleccionado = empleados.find((emp) => emp.id === empleadoId)?.nombre || empleadoNombreCita || 'Sin empleado asignado';
+    const estadoLabel = estadoCita ? estadoCita.replace(/_/g, ' ').toUpperCase() : 'SIN ESTADO';
+    const estadoColor = estadoCita === 'completada'
+        ? '#22c55e'
+        : estadoCita === 'cancelada'
+            ? '#ef4444'
+            : theme.colors.primary;
 
     return (
-        <KyrosScreen title="Editar Cita">
+        <KyrosScreen title={screenTitle}>
             <ScrollView style={[styles.scroll, { backgroundColor: palette.background, maxWidth: responsive.formMaxWidth, alignSelf: 'center' }]} showsVerticalScrollIndicator={false}>
+
+                <View style={[styles.section, { backgroundColor: palette.surface, borderColor: palette.borderStrong }]}>
+                    <View style={styles.sectionHeader}>
+                        <MaterialIcons name="visibility" size={20} color={theme.colors.primary} />
+                        <Text style={[styles.sectionTitle, { color: palette.textStrong }]}>Resumen</Text>
+                    </View>
+                    <View style={[styles.summaryBox, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }]}>
+                        <View style={styles.summaryRow}>
+                            <Text style={[styles.summaryLabel, { color: palette.textMuted }]}>Estado</Text>
+                            <Text style={[styles.summaryValue, { color: estadoColor }]}>{estadoLabel}</Text>
+                        </View>
+                        <View style={styles.summaryRow}>
+                            <Text style={[styles.summaryLabel, { color: palette.textMuted }]}>Fecha</Text>
+                            <Text style={[styles.summaryValue, { color: palette.text }]}>{displayDateLabel(fechaSeleccionada)}</Text>
+                        </View>
+                        <View style={styles.summaryRow}>
+                            <Text style={[styles.summaryLabel, { color: palette.textMuted }]}>Horario</Text>
+                            <Text style={[styles.summaryValue, { color: palette.text }]}>{displayTimeFrom24(hora)} - {displayTimeFrom24(horaFin)}</Text>
+                        </View>
+                        <View style={styles.summaryRow}>
+                            <Text style={[styles.summaryLabel, { color: palette.textMuted }]}>Empleado</Text>
+                            <Text style={[styles.summaryValue, { color: palette.text }]}>{empleadoSeleccionado}</Text>
+                        </View>
+                        <View style={styles.summaryRow}>
+                            <Text style={[styles.summaryLabel, { color: palette.textMuted }]}>Sucursal</Text>
+                            <Text style={[styles.summaryValue, { color: palette.text }]}>{sucursalNombreCita || 'Sucursal no disponible'}</Text>
+                        </View>
+                        <View style={[styles.summaryRow, { borderBottomWidth: 0 }]}>
+                            <Text style={[styles.summaryLabel, { color: palette.textMuted, fontWeight: 'bold' }]}>Total</Text>
+                            <Text style={[styles.summaryValue, { color: '#22c55e', fontSize: 18 }]}>${totalFinal}</Text>
+                        </View>
+                    </View>
+                </View>
 
                 {/* ═══════ Section 1: Cliente ═══════ */}
                 <View style={[styles.section, { backgroundColor: palette.surface, borderColor: palette.borderStrong }]}>
@@ -568,21 +686,21 @@ export default function EditarCitaScreen() {
                         <Text style={[styles.sectionTitle, { color: palette.textStrong }]}>Servicios</Text>
                     </View>
                     <View style={styles.chipsContainer}>
-                        {serviciosSeleccionados.map(s => (
+                        {serviciosResumen.map(s => (
                             <View key={s.id} style={[styles.chip, { backgroundColor: palette.selectedBg, borderColor: theme.colors.primary }]}>
                                 <Text style={[styles.chipText, { color: theme.colors.primary, fontWeight: '600' }]}>
-                                    {s.nombre} (${s.precio_base})
+                                    {s.nombre} (${s.precio})
                                 </Text>
                             </View>
                         ))}
                     </View>
                     {errors.servicios && <Text style={styles.error}>{errors.servicios}</Text>}
 
-                    {serviciosSeleccionados.length > 0 && (
+                    {serviciosResumen.length > 0 && (
                         <View style={[styles.summaryBox, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }]}>
                             <View style={styles.summaryRow}>
                                 <Text style={[styles.summaryLabel, { color: palette.textMuted }]}>Servicios</Text>
-                                <Text style={[styles.summaryValue, { color: palette.text }]}>{serviciosSeleccionados.length}</Text>
+                                <Text style={[styles.summaryValue, { color: palette.text }]}>{serviciosResumen.length}</Text>
                             </View>
                             <View style={styles.summaryRow}>
                                 <Text style={[styles.summaryLabel, { color: palette.textMuted }]}>Duración estimada</Text>
@@ -600,9 +718,14 @@ export default function EditarCitaScreen() {
                 <View style={[styles.section, { backgroundColor: palette.surface, borderColor: palette.borderStrong }]}>
                     <View style={styles.sectionHeader}>
                         <MaterialIcons name="badge" size={20} color={theme.colors.primary} />
-                        <Text style={[styles.sectionTitle, { color: palette.textStrong }]}>Empleado *</Text>
+                        <Text style={[styles.sectionTitle, { color: palette.textStrong }]}>Empleado{isReadOnly ? '' : ' *'}</Text>
                     </View>
-                    {Platform.OS === 'web' ? (
+                    {isReadOnly ? (
+                        <View style={[styles.readonlyField, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }]}>
+                            <MaterialIcons name="badge" size={22} color={palette.textSoft} style={{ marginRight: 10 }} />
+                            <Text style={{ color: palette.text, fontSize: 16 }}>{empleadoSeleccionado}</Text>
+                        </View>
+                    ) : Platform.OS === 'web' ? (
                         <select
                             value={empleadoId ?? ''}
                             onChange={(e) => {
@@ -648,60 +771,79 @@ export default function EditarCitaScreen() {
                         <MaterialIcons name="event" size={20} color={theme.colors.primary} />
                         <Text style={[styles.sectionTitle, { color: palette.textStrong }]}>Fecha y Hora</Text>
                     </View>
-                    <View style={{ gap: 14 }}>
-                        <View>
-                            <Text style={[styles.fieldLabel, { color: palette.textMuted }]}>Fecha *</Text>
-                            <TouchableOpacity onPress={() => setShowDatePicker(true)} style={[styles.timeInputContainer, { backgroundColor: palette.inputBg, borderColor: palette.border }]} activeOpacity={0.7}>
-                                <MaterialIcons name="event" size={20} color={theme.colors.primary} style={{ marginRight: 8 }} />
-                                <Text style={[styles.timeInputText, { color: palette.text }, !fechaSeleccionada && { color: palette.textSoft }]}>
-                                    {fechaSeleccionada || 'Seleccionar fecha'}
-                                </Text>
-                            </TouchableOpacity>
+                    {isReadOnly ? (
+                        <View style={{ gap: 12 }}>
+                            <View style={[styles.readonlyField, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }]}>
+                                <MaterialIcons name="event" size={22} color={palette.textSoft} style={{ marginRight: 10 }} />
+                                <Text style={{ color: palette.text, fontSize: 16 }}>{displayDateLabel(fechaSeleccionada)}</Text>
+                            </View>
+                            <View style={[styles.readonlyField, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }]}>
+                                <MaterialIcons name="schedule" size={22} color={palette.textSoft} style={{ marginRight: 10 }} />
+                                <Text style={{ color: palette.text, fontSize: 16 }}>{displayTimeFrom24(hora)} - {displayTimeFrom24(horaFin)}</Text>
+                            </View>
                         </View>
-                        <View>
-                            <Text style={[styles.fieldLabel, { color: palette.textMuted }]}>Hora *</Text>
-                            <TouchableOpacity onPress={() => setShowTimePicker(true)} style={[styles.timeInputContainer, { backgroundColor: palette.inputBg, borderColor: palette.border }]} activeOpacity={0.7}>
-                                <MaterialIcons name="access-time" size={20} color={theme.colors.primary} style={{ marginRight: 8 }} />
-                                <Text style={[styles.timeInputText, { color: palette.text }, !hora && { color: palette.textSoft }]}>
-                                    {hora ? displayTimeFrom24(hora) : 'Seleccionar hora'}
-                                </Text>
-                            </TouchableOpacity>
-                            {errors.hora && <Text style={styles.error}>{errors.hora}</Text>}
-                            {errors.fecha && <Text style={styles.error}>{errors.fecha}</Text>}
+                    ) : (
+                        <View style={{ gap: 14 }}>
+                            <View>
+                                <Text style={[styles.fieldLabel, { color: palette.textMuted }]}>Fecha *</Text>
+                                <TouchableOpacity onPress={() => setShowDatePicker(true)} style={[styles.timeInputContainer, { backgroundColor: palette.inputBg, borderColor: palette.border }]} activeOpacity={0.7}>
+                                    <MaterialIcons name="event" size={20} color={theme.colors.primary} style={{ marginRight: 8 }} />
+                                    <Text style={[styles.timeInputText, { color: palette.text }, !fechaSeleccionada && { color: palette.textSoft }]}>
+                                        {fechaSeleccionada || 'Seleccionar fecha'}
+                                    </Text>
+                                </TouchableOpacity>
+                            </View>
+                            <View>
+                                <Text style={[styles.fieldLabel, { color: palette.textMuted }]}>Hora *</Text>
+                                <TouchableOpacity onPress={() => setShowTimePicker(true)} style={[styles.timeInputContainer, { backgroundColor: palette.inputBg, borderColor: palette.border }]} activeOpacity={0.7}>
+                                    <MaterialIcons name="access-time" size={20} color={theme.colors.primary} style={{ marginRight: 8 }} />
+                                    <Text style={[styles.timeInputText, { color: palette.text }, !hora && { color: palette.textSoft }]}>
+                                        {hora ? displayTimeFrom24(hora) : 'Seleccionar hora'}
+                                    </Text>
+                                </TouchableOpacity>
+                                {errors.hora && <Text style={styles.error}>{errors.hora}</Text>}
+                                {errors.fecha && <Text style={styles.error}>{errors.fecha}</Text>}
+                            </View>
                         </View>
-                    </View>
+                    )}
                 </View>
 
                 {/* Actions */}
                 <View style={styles.actionsContainer}>
-                    <TouchableOpacity onPress={() => router.back()} style={[styles.cancelBtn, { borderColor: palette.borderStrong }]}>
-                        <Text style={{ color: palette.textMuted, fontSize: 16, fontWeight: '600' }}>Cancelar</Text>
+                    <TouchableOpacity onPress={handleGoBack} style={[styles.cancelBtn, { borderColor: palette.borderStrong }]}>
+                        <Text style={{ color: palette.textMuted, fontSize: 16, fontWeight: '600' }}>{isReadOnly ? 'Volver' : 'Cancelar'}</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={handleSave} disabled={saving} style={[styles.saveBtn, { backgroundColor: theme.colors.primary }]}>
-                        {saving ? (
-                            <ActivityIndicator size="small" color="#fff" />
-                        ) : (
-                            <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>Actualizar Cita</Text>
-                        )}
-                    </TouchableOpacity>
+                    {!isReadOnly && (
+                        <TouchableOpacity onPress={handleSave} disabled={saving} style={[styles.saveBtn, { backgroundColor: theme.colors.primary }]}>
+                            {saving ? (
+                                <ActivityIndicator size="small" color="#fff" />
+                            ) : (
+                                <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>Actualizar Cita</Text>
+                            )}
+                        </TouchableOpacity>
+                    )}
                 </View>
 
                 <View style={{ height: 80 }} />
             </ScrollView>
 
             {/* Modals */}
-            <DatePickerModal
-                visible={showDatePicker}
-                value={fechaSeleccionada}
-                onSelect={(date) => setFechaSeleccionada(date)}
-                onClose={() => setShowDatePicker(false)}
-            />
-            <TimePickerModal
-                visible={showTimePicker}
-                value={hora}
-                onSelect={(t) => { setHora(t); setErrors(prev => ({ ...prev, hora: '' })); }}
-                onClose={() => setShowTimePicker(false)}
-            />
+            {!isReadOnly && (
+                <DatePickerModal
+                    visible={showDatePicker}
+                    value={fechaSeleccionada}
+                    onSelect={(date) => setFechaSeleccionada(date)}
+                    onClose={() => setShowDatePicker(false)}
+                />
+            )}
+            {!isReadOnly && (
+                <TimePickerModal
+                    visible={showTimePicker}
+                    value={hora}
+                    onSelect={(t) => { setHora(t); setErrors(prev => ({ ...prev, hora: '' })); }}
+                    onClose={() => setShowTimePicker(false)}
+                />
+            )}
         </KyrosScreen>
     );
 }

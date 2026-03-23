@@ -9,6 +9,7 @@ import KyrosButton from '../../components/KyrosButton';
 import SucursalFormModal from '../../components/SucursalFormModal';
 import { supabase } from '../../lib/supabaseClient';
 import { useApp } from '../../lib/AppContext';
+import { useKyrosPalette } from '../../lib/useKyrosPalette';
 
 interface Sucursal {
     id: number;
@@ -26,6 +27,7 @@ interface Sucursal {
 
 export default function SucursalesScreen() {
     const theme = useTheme();
+    const palette = useKyrosPalette();
     const [sucursales, setSucursales] = useState<Sucursal[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -191,7 +193,7 @@ export default function SucursalesScreen() {
 
     return (
         <KyrosScreen title="Sucursales">
-            <ScrollView style={styles.container}>
+            <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
                 {/* Add button (only owners) */}
                 {canManage && (
                     <KyrosCard>
@@ -240,7 +242,7 @@ export default function SucursalesScreen() {
                 {/* List */}
                 {!loading && !error && sucursales.length > 0 && (
                     <View style={{ paddingHorizontal: 16 }}>
-                        <Text style={{ color: '#f8fafc', fontWeight: 'bold', fontSize: 18, marginBottom: 12 }}>Sucursales ({sucursales.length})</Text>
+                        <Text style={{ color: palette.textMuted, fontWeight: 'bold', fontSize: 18, marginBottom: 12 }}>Sucursales ({sucursales.length})</Text>
                         {sucursales.map(suc => (
                             <KyrosCard key={suc.id} style={{ marginBottom: 12 }}>
                                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>

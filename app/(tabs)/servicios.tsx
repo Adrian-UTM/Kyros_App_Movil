@@ -111,7 +111,7 @@ export default function ServiciosScreen() {
 
     return (
         <KyrosScreen title="Servicios">
-            <ScrollView style={styles.container}>
+            <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
                 {loading && (
                     <View style={styles.centerState}>
                         <ActivityIndicator size="large" color="#38bdf8" />

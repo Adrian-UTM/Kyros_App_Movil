@@ -107,6 +107,28 @@ export default function AgendaScreen() {
         );
     };
 
+    const isNetworkError = useCallback((err: unknown) => {
+        const message = typeof err === 'string'
+            ? err
+            : err && typeof err === 'object' && 'message' in err
+                ? String((err as { message?: unknown }).message ?? '')
+                : '';
+        const normalized = message.toLowerCase();
+        return (
+            normalized.includes('network') ||
+            normalized.includes('internet') ||
+            normalized.includes('fetch') ||
+            normalized.includes('connection') ||
+            normalized.includes('offline') ||
+            normalized.includes('timeout')
+        );
+    }, []);
+
+    const hasInternetConnection = useCallback(async () => {
+        const networkState = await NetInfo.fetch();
+        return !!networkState.isConnected && networkState.isInternetReachable !== false;
+    }, []);
+
     // Calcular Resumen del Día
     const filteredCitas = useMemo(() => {
         if (calendarFilter === 'todas') return citas;
@@ -146,6 +168,18 @@ export default function AgendaScreen() {
         loadSucursales();
     }, [rol, negocioId]);
 
+    useEffect(() => {
+        const unsubscribe = NetInfo.addEventListener((state) => {
+            const offline = !state.isConnected || state.isInternetReachable === false;
+            setIsOffline(offline);
+            if (!offline) {
+                setError((prev) => (prev && isNetworkError(prev) ? null : prev));
+            }
+        });
+
+        return unsubscribe;
+    }, [isNetworkError]);
+
     // Fetch citas del día seleccionado
     const fetchCitas = useCallback(async () => {
         if (!negocioId) {
@@ -163,8 +197,8 @@ export default function AgendaScreen() {
         setError(null);
 
         try {
-            const networkState = await NetInfo.fetch();
-            if (!networkState.isConnected) {
+            const hasConnection = await hasInternetConnection();
+            if (!hasConnection) {
                 setIsOffline(true);
                 setLoading(false);
                 setRefreshing(false);
@@ -208,12 +242,17 @@ export default function AgendaScreen() {
 
         } catch (err: any) {
             console.error('Error fetching citas:', err);
-            setError(err.message || 'Error al cargar las citas');
+            if (isNetworkError(err)) {
+                setIsOffline(true);
+                setError(null);
+            } else {
+                setError(err.message || 'Error al cargar las citas');
+            }
         } finally {
             setLoading(false);
             setRefreshing(false);
         }
-    }, [selectedDate, negocioId, sucursalId, rol, selectedSucursal]);
+    }, [selectedDate, negocioId, sucursalId, rol, selectedSucursal, hasInternetConnection, isNetworkError]);
     const fetchMonthMarks = useCallback(async (yearMonth: string) => {
         if (!negocioId) return;
 
@@ -223,70 +262,82 @@ export default function AgendaScreen() {
         const nextYear = parseInt(month, 10) === 12 ? String(parseInt(year, 10) + 1) : year;
         const endDate = `${nextYear}-${nextMonth}-01T00:00:00.000`;
 
-        let query = supabase
-            .from(TABLES.citas)
-            .select('fecha_hora_inicio, estado')
-            .eq('negocio_id', negocioId)
-            .gte('fecha_hora_inicio', startDate)
-            .lt('fecha_hora_inicio', endDate)
-            .neq('estado', 'cancelada');
-
-        if (rol === 'sucursal' && sucursalId) {
-            query = query.eq('sucursal_id', sucursalId);
-        } else if (rol === 'dueño' && selectedSucursal !== 'all') {
-            query = query.eq('sucursal_id', selectedSucursal);
-        }
-
-        const { data, error } = await query;
-
-        if (error) {
-            console.error('[Agenda] Error fetching month marks:', error.message);
-            return;
-        }
-
-        if (data) {
-            const completedDays = new Set<string>();
-            const upcomingDays = new Set<string>();
-            data.forEach(cita => {
-                if (cita.fecha_hora_inicio) {
-                    const dateObj = new Date(cita.fecha_hora_inicio);
-                    const localIso = new Date(dateObj.getTime() - dateObj.getTimezoneOffset() * 60000).toISOString();
-                    const dateStr = localIso.split('T')[0];
-
-                    if (cita.estado === 'completada') {
-                        completedDays.add(dateStr);
-                    } else {
-                        upcomingDays.add(dateStr);
-                    }
-                }
-            });
-
-            const marks: any = {};
-            if (calendarFilter === 'todas' || calendarFilter === 'proximas') {
-                upcomingDays.forEach(d => {
-                    marks[d] = {
-                        customStyles: {
-                            container: {},
-                            text: { color: palette.infoText, fontWeight: '700' }
-                        }
-                    };
-                });
+        try {
+            const hasConnection = await hasInternetConnection();
+            if (!hasConnection) {
+                setIsOffline(true);
+                return;
             }
-            if (calendarFilter === 'todas' || calendarFilter === 'completadas') {
-                completedDays.forEach(d => {
-                    if (!marks[d]) {
+            setIsOffline(false);
+
+            let query = supabase
+                .from(TABLES.citas)
+                .select('fecha_hora_inicio, estado')
+                .eq('negocio_id', negocioId)
+                .gte('fecha_hora_inicio', startDate)
+                .lt('fecha_hora_inicio', endDate)
+                .neq('estado', 'cancelada');
+
+            if (rol === 'sucursal' && sucursalId) {
+                query = query.eq('sucursal_id', sucursalId);
+            } else if (rol === 'dueño' && selectedSucursal !== 'all') {
+                query = query.eq('sucursal_id', selectedSucursal);
+            }
+
+            const { data, error } = await query;
+
+            if (error) throw error;
+
+            if (data) {
+                const completedDays = new Set<string>();
+                const upcomingDays = new Set<string>();
+                data.forEach(cita => {
+                    if (cita.fecha_hora_inicio) {
+                        const dateObj = new Date(cita.fecha_hora_inicio);
+                        const localIso = new Date(dateObj.getTime() - dateObj.getTimezoneOffset() * 60000).toISOString();
+                        const dateStr = localIso.split('T')[0];
+
+                        if (cita.estado === 'completada') {
+                            completedDays.add(dateStr);
+                        } else {
+                            upcomingDays.add(dateStr);
+                        }
+                    }
+                });
+
+                const marks: any = {};
+                if (calendarFilter === 'todas' || calendarFilter === 'proximas') {
+                    upcomingDays.forEach(d => {
                         marks[d] = {
                             customStyles: {
                                 container: {},
-                                text: { color: palette.successText, fontWeight: '700' }
+                                text: { color: palette.infoText, fontWeight: '700' }
                             }
                         };
-                    }
-                });
+                    });
+                }
+                if (calendarFilter === 'todas' || calendarFilter === 'completadas') {
+                    completedDays.forEach(d => {
+                        if (!marks[d]) {
+                            marks[d] = {
+                                customStyles: {
+                                    container: {},
+                                    text: { color: palette.successText, fontWeight: '700' }
+                                }
+                            };
+                        }
+                    });
+                }
+                setMonthMarks(marks);
             }
-            setMonthMarks(marks);
+        } catch (err: any) {
+            console.error('[Agenda] Error fetching month marks:', err);
+            if (isNetworkError(err)) {
+                setIsOffline(true);
+                setError(null);
+            }
         }
-    }, [negocioId, sucursalId, rol, selectedSucursal, calendarFilter, palette.infoText, palette.successText]);
+    }, [negocioId, sucursalId, rol, selectedSucursal, calendarFilter, palette.infoText, palette.successText, hasInternetConnection, isNetworkError]);
 
     // Initial load when current context is established
     useEffect(() => {
@@ -432,8 +483,22 @@ export default function AgendaScreen() {
         const today = getLocalToday();
         const selectedMark = {
             customStyles: {
-                container: { backgroundColor: theme.colors.primary, borderRadius: 16 },
-                text: { color: '#ffffff', fontWeight: '800' }
+                container: {
+                    backgroundColor: theme.colors.primary,
+                    borderRadius: 18,
+                    width: 40,
+                    height: 40,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    alignSelf: 'center',
+                },
+                text: {
+                    color: '#ffffff',
+                    fontWeight: '800',
+                    textAlign: 'center',
+                    lineHeight: 20,
+                    includeFontPadding: false,
+                }
             }
         };
 
@@ -442,10 +507,21 @@ export default function AgendaScreen() {
                 container: {
                     borderWidth: 1,
                     borderColor: theme.colors.primary,
-                    borderRadius: 16,
-                    backgroundColor: palette.selectedBg
+                    borderRadius: 18,
+                    backgroundColor: palette.selectedBg,
+                    width: 40,
+                    height: 40,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    alignSelf: 'center',
                 },
-                text: { color: palette.text, fontWeight: '700' }
+                text: {
+                    color: palette.text,
+                    fontWeight: '700',
+                    textAlign: 'center',
+                    lineHeight: 20,
+                    includeFontPadding: false,
+                }
             }
         };
 
@@ -455,6 +531,49 @@ export default function AgendaScreen() {
             [selectedDate]: selectedMark,
         };
     }, [monthMarks, selectedDate, theme.colors.primary, palette.selectedBg, palette.text]);
+
+    const renderCalendarDay = useCallback(({ date, state, marking }: any) => {
+        const containerStyle = marking?.customStyles?.container || {};
+        const textStyle = marking?.customStyles?.text || {};
+        const baseTextColor = state === 'disabled'
+            ? palette.disabled
+            : palette.isDark
+                ? palette.textMuted
+                : palette.textStrong;
+
+        return (
+            <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => date?.dateString && setSelectedDate(date.dateString)}
+                style={[
+                    {
+                        width: 40,
+                        height: 40,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        alignSelf: 'center',
+                    },
+                    containerStyle,
+                ]}
+            >
+                <Text
+                    style={[
+                        {
+                            color: baseTextColor,
+                            fontSize: 15,
+                            fontWeight: '600',
+                            textAlign: 'center',
+                            lineHeight: 20,
+                            includeFontPadding: false,
+                        },
+                        textStyle,
+                    ]}
+                >
+                    {date?.day}
+                </Text>
+            </TouchableOpacity>
+        );
+    }, [palette.disabled, palette.isDark, palette.textMuted, palette.textStrong]);
 
     return (
         <KyrosScreen title="Panel de Control">
@@ -544,6 +663,7 @@ export default function AgendaScreen() {
                                     setCurrentMonth(`${month.year}-${String(month.month).padStart(2, '0')}`);
                                 }}
                                 markedDates={markedDates}
+                                dayComponent={renderCalendarDay}
                                 enableSwipeMonths
                                 theme={{
                                     calendarBackground: 'transparent',
@@ -582,14 +702,19 @@ export default function AgendaScreen() {
                                     },
                                     'stylesheet.day.basic': {
                                         base: {
-                                            width: 36,
-                                            height: 36,
+                                            width: 40,
+                                            height: 40,
                                             alignItems: 'center',
+                                            justifyContent: 'center',
+                                            alignSelf: 'center',
                                         },
                                         text: {
                                             color: palette.text,
                                             fontSize: 15,
                                             fontWeight: '500',
+                                            textAlign: 'center',
+                                            lineHeight: 20,
+                                            includeFontPadding: false,
                                         },
                                         today: {
                                             color: theme.colors.primary,
@@ -650,7 +775,7 @@ export default function AgendaScreen() {
                                 <Text style={[styles.stateText, { marginTop: 0, paddingHorizontal: 20, fontSize: 13 }]}>
                                     Verifica tu conexión y vuelve a intentarlo.
                                 </Text>
-                                <KyrosButton onPress={() => fetchCitas()} style={{ marginTop: 16 }}>
+                                <KyrosButton onPress={onRefresh} style={{ marginTop: 16 }}>
                                     Reintentar
                                 </KyrosButton>
                             </View>
@@ -679,8 +804,8 @@ export default function AgendaScreen() {
                         {/* Empty State */}
                         {!loading && !error && !isOffline && filteredCitas.length === 0 && (
                             <View style={styles.emptyState}>
-                                <MaterialIcons name="event-busy" size={64} color="#ccc" />
-                                <Text variant="bodyLarge" style={styles.emptyText}>
+                                <MaterialIcons name="event-busy" size={64} color={palette.textSoft} />
+                                <Text variant="bodyLarge" style={[styles.emptyText, { color: palette.textStrong }]}>
                                     {calendarFilter === 'todas'
                                         ? 'No hay citas programadas para este día.'
                                         : calendarFilter === 'completadas'
@@ -694,8 +819,10 @@ export default function AgendaScreen() {
                         {!loading && !error && !isOffline && filteredCitas.map((cita) => {
                             const statusColors = getStatusColors(cita.estado);
                             return (
-                                <View
+                                <TouchableOpacity
                                     key={cita.id}
+                                    activeOpacity={0.92}
+                                    onPress={() => router.push(`/citas/${cita.id}`)}
                                     style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}
                                 >
                                     {/* Status accent bar */}
@@ -749,6 +876,10 @@ export default function AgendaScreen() {
 
                                             {/* Actions */}
                                             <View style={styles.cardActions}>
+                                                <TouchableOpacity onPress={() => router.push(`/citas/${cita.id}`)} style={[styles.actionBtn, { backgroundColor: palette.surfaceRaised, borderColor: palette.border }]}>
+                                                    <MaterialIcons name="visibility" size={18} color={palette.infoText} />
+                                                </TouchableOpacity>
+
                                                 {cita.estado !== 'completada' && cita.estado !== 'cancelada' && (
                                                     <TouchableOpacity onPress={() => router.push(`/citas/${cita.id}`)} style={[styles.actionBtn, { backgroundColor: palette.surfaceRaised, borderColor: palette.border }]}>
                                                         <MaterialIcons name="edit" size={18} color={palette.infoText} />
@@ -775,7 +906,7 @@ export default function AgendaScreen() {
                                             </View>
                                         </View>
                                     </View>
-                                </View>
+                                </TouchableOpacity>
                             );
                         })}
                         <View style={{ height: 80 }} />

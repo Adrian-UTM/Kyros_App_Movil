@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, Alert, TouchableOpacity, Dimensions, Modal as RNModal, TouchableWithoutFeedback, ActivityIndicator, Linking } from 'react-native';
+import { View, StyleSheet, ScrollView, Alert, TouchableOpacity, Dimensions, Modal as RNModal, TouchableWithoutFeedback, ActivityIndicator, Linking, Platform } from 'react-native';
 import { Text, Avatar, List, useTheme, Divider, Switch, TextInput } from 'react-native-paper';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Session } from '../../lib/session';
@@ -11,6 +11,7 @@ import { supabase } from '../../lib/supabaseClient';
 import { safeAction } from '../../lib/safeAction';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as Notifications from 'expo-notifications';
 import QRCode from 'react-native-qrcode-svg';
 import { useKyrosPalette } from '../../lib/useKyrosPalette';
 import { getEndOfDayLocal, getLocalToday, getStartOfDayLocal } from '../../lib/date';
@@ -40,6 +41,10 @@ export default function PerfilScreen() {
     const [weekdaysActive, setWeekdaysActive] = useState<number[]>([]);
     const [weekendActive, setWeekendActive] = useState<number[]>([]);
     const [qrModalVisible, setQrModalVisible] = useState(false);
+    const [notificationsExpanded, setNotificationsExpanded] = useState(false);
+    const [helpExpanded, setHelpExpanded] = useState(false);
+    const [notificationStatus, setNotificationStatus] = useState<'loading' | 'granted' | 'denied' | 'undetermined' | 'unavailable'>('loading');
+    const [requestingNotifications, setRequestingNotifications] = useState(false);
     const [schedule, setSchedule] = useState({
         weekday_open: '09:00',
         weekday_close: '20:00',
@@ -421,32 +426,53 @@ export default function PerfilScreen() {
         setTimePickerVisible(true);
     };
 
-    const handleOpenNotificationSettings = async () => {
+    const loadNotificationStatus = async () => {
         try {
-            await Linking.openSettings();
+            const { status } = await Notifications.getPermissionsAsync();
+            if (status === 'granted') setNotificationStatus('granted');
+            else if (status === 'denied') setNotificationStatus('denied');
+            else setNotificationStatus('undetermined');
         } catch {
-            Alert.alert('Notificaciones', 'Abre los ajustes del dispositivo para administrar los permisos de Kyros.');
+            setNotificationStatus('unavailable');
+        }
+    };
+
+    const handleOpenNotificationSettings = async () => {
+        setHelpExpanded(false);
+        setNotificationsExpanded(prev => !prev);
+        setNotificationStatus('loading');
+        await loadNotificationStatus();
+    };
+
+    const handleRequestNotifications = async () => {
+        setRequestingNotifications(true);
+        try {
+            if (Platform.OS === 'android') {
+                await Notifications.setNotificationChannelAsync('default', {
+                    name: 'default',
+                    importance: Notifications.AndroidImportance.DEFAULT,
+                });
+            }
+            const { status } = await Notifications.requestPermissionsAsync();
+            if (status === 'granted') setNotificationStatus('granted');
+            else if (status === 'denied') setNotificationStatus('denied');
+            else setNotificationStatus('undetermined');
+        } catch {
+            setNotificationStatus('unavailable');
+        } finally {
+            setRequestingNotifications(false);
         }
     };
 
     const handleHelpPress = () => {
-        Alert.alert(
-            'Ayuda',
-            'Correo de soporte oficial:\nkyros.soporte.oficial@gmail.com',
-            [
-                { text: 'Cerrar', style: 'cancel' },
-                {
-                    text: 'Enviar correo',
-                    onPress: () => Linking.openURL('mailto:kyros.soporte.oficial@gmail.com').catch(() => {})
-                }
-            ]
-        );
+        setNotificationsExpanded(false);
+        setHelpExpanded(prev => !prev);
     };
 
     return (
         <>
             <KyrosScreen title={rol === 'sucursal' ? 'Mi Sucursal' : 'Mi Perfil'}>
-            <ScrollView style={[styles.container, { backgroundColor: palette.background }]} contentContainerStyle={styles.contentContainer}>
+            <ScrollView style={[styles.container, { backgroundColor: palette.background }]} showsVerticalScrollIndicator={false} contentContainerStyle={styles.contentContainer}>
 
                 {/* SUCRUSAL ONLY: HEADER WITH QR */}
                 {rol === 'sucursal' ? (
@@ -758,26 +784,122 @@ export default function PerfilScreen() {
                             <Divider />
                         </>
                     )}
-                    <List.Item
-                        title="Notificaciones"
-                        description="Administrar permisos del dispositivo"
-                        left={props => <List.Icon {...props} icon="bell" />}
-                        right={props => <List.Icon {...props} icon="chevron-right" />}
-                        onPress={handleOpenNotificationSettings}
-                    />
+                    <TouchableOpacity style={[styles.settingsRow, { borderBottomColor: palette.border }]} onPress={handleOpenNotificationSettings} activeOpacity={0.7}>
+                        <View style={[styles.settingsIconWrap, { backgroundColor: palette.selectedBg }]}>
+                            <MaterialIcons name="notifications-none" size={20} color={theme.colors.primary} />
+                        </View>
+                        <View style={styles.settingsTextWrap}>
+                            <Text style={[styles.settingsTitle, { color: palette.textStrong }]}>Notificaciones</Text>
+                            <Text style={[styles.settingsDescription, { color: palette.textMuted }]}>Administrar permisos del dispositivo</Text>
+                        </View>
+                        <MaterialIcons name={notificationsExpanded ? 'expand-less' : 'chevron-right'} size={22} color={palette.textSoft} />
+                    </TouchableOpacity>
                     <Divider />
+                    {notificationsExpanded && (
+                        <>
+                            <View style={[styles.settingsDetailCard, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }]}>
+                                <Text style={[styles.settingsDetailTitle, { color: palette.textStrong }]}>
+                                    Permisos de notificaciones
+                                </Text>
+                                <Text style={[styles.settingsDetailBody, { color: palette.textMuted }]}>
+                                    Revisa el estado actual del permiso y actívalo desde aquí o desde los ajustes del sistema.
+                                </Text>
+                                <View style={[styles.statusPill, {
+                                    backgroundColor: notificationStatus === 'granted'
+                                        ? palette.successBg
+                                        : notificationStatus === 'denied'
+                                            ? palette.warningBg
+                                            : palette.selectedBg
+                                }]}>
+                                    <Text style={{
+                                        color: notificationStatus === 'granted'
+                                            ? palette.successText
+                                            : notificationStatus === 'denied'
+                                                ? palette.warningText
+                                                : theme.colors.primary,
+                                        fontWeight: '700'
+                                    }}>
+                                        {notificationStatus === 'granted'
+                                            ? 'Permiso activo'
+                                            : notificationStatus === 'denied'
+                                                ? 'Permiso denegado'
+                                                : notificationStatus === 'undetermined'
+                                                    ? 'Permiso pendiente'
+                                                    : notificationStatus === 'loading'
+                                                        ? 'Verificando permiso...'
+                                                        : 'No disponible en este dispositivo'}
+                                    </Text>
+                                </View>
+                                <View style={styles.settingsActionRow}>
+                                    {notificationStatus !== 'granted' && notificationStatus !== 'loading' && (
+                                        <KyrosButton
+                                            onPress={notificationStatus === 'denied' ? () => Linking.openSettings().catch(() => {}) : handleRequestNotifications}
+                                            loading={requestingNotifications}
+                                            disabled={requestingNotifications}
+                                            mode="outlined"
+                                            style={styles.settingsActionButton}
+                                        >
+                                            {notificationStatus === 'denied' ? 'Abrir ajustes' : 'Solicitar permiso'}
+                                        </KyrosButton>
+                                    )}
+                                    <KyrosButton
+                                        onPress={handleOpenNotificationSettings}
+                                        mode="text"
+                                        compact
+                                        style={styles.settingsActionButton}
+                                    >
+                                        Cerrar
+                                    </KyrosButton>
+                                </View>
+                            </View>
+                            <Divider />
+                        </>
+                    )}
                     <List.Item
                         title={themeMode === 'dark' ? "Modo Oscuro Activado" : "Modo Claro Activado"}
                         left={props => <List.Icon {...props} icon="theme-light-dark" />}
                         right={props => <Switch value={themeMode === 'dark'} onValueChange={toggleTheme} color={theme.colors.primary} />}
                     />
                     <Divider />
-                    <List.Item
-                        title="Ayuda"
-                        left={props => <List.Icon {...props} icon="help-circle" />}
-                        right={props => <List.Icon {...props} icon="chevron-right" />}
-                        onPress={handleHelpPress}
-                    />
+                    <TouchableOpacity style={styles.settingsRow} onPress={handleHelpPress} activeOpacity={0.7}>
+                        <View style={[styles.settingsIconWrap, { backgroundColor: palette.selectedBg }]}>
+                            <MaterialIcons name="help-outline" size={20} color={theme.colors.primary} />
+                        </View>
+                        <View style={styles.settingsTextWrap}>
+                            <Text style={[styles.settingsTitle, { color: palette.textStrong }]}>Ayuda</Text>
+                            <Text style={[styles.settingsDescription, { color: palette.textMuted }]}>Contacto de soporte oficial</Text>
+                        </View>
+                        <MaterialIcons name={helpExpanded ? 'expand-less' : 'chevron-right'} size={22} color={palette.textSoft} />
+                    </TouchableOpacity>
+                    {helpExpanded && (
+                        <View style={[styles.settingsDetailCard, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }]}>
+                            <Text style={[styles.settingsDetailTitle, { color: palette.textStrong }]}>
+                                Soporte Kyros
+                            </Text>
+                            <Text style={[styles.settingsDetailBody, { color: palette.textMuted }]}>
+                                Si necesitas ayuda, escríbenos al correo oficial.
+                            </Text>
+                            <Text style={[styles.supportEmail, { color: theme.colors.primary }]}>
+                                kyros.soporte.oficial@gmail.com
+                            </Text>
+                            <View style={styles.settingsActionRow}>
+                                <KyrosButton
+                                    onPress={() => Linking.openURL('mailto:kyros.soporte.oficial@gmail.com').catch(() => {})}
+                                    style={styles.settingsActionButton}
+                                >
+                                    Enviar correo
+                                </KyrosButton>
+                                <KyrosButton
+                                    onPress={handleHelpPress}
+                                    mode="text"
+                                    compact
+                                    style={styles.settingsActionButton}
+                                >
+                                    Cerrar
+                                </KyrosButton>
+                            </View>
+                        </View>
+                    )}
                 </KyrosCard>
 
                 <View style={styles.buttonContainer}>
@@ -1018,6 +1140,68 @@ const styles = StyleSheet.create({
     ownerRevenueValue: {
         fontSize: 24,
         fontWeight: '800',
+    },
+    settingsRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 14,
+    },
+    settingsIconWrap: {
+        width: 38,
+        height: 38,
+        borderRadius: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 12,
+    },
+    settingsTextWrap: {
+        flex: 1,
+        marginRight: 10,
+    },
+    settingsTitle: {
+        fontSize: 15,
+        fontWeight: '700',
+        marginBottom: 2,
+    },
+    settingsDescription: {
+        fontSize: 12,
+        lineHeight: 18,
+    },
+    settingsDetailCard: {
+        borderWidth: 1,
+        borderRadius: 16,
+        padding: 16,
+        marginVertical: 14,
+    },
+    settingsDetailTitle: {
+        fontSize: 14,
+        fontWeight: '700',
+        marginBottom: 6,
+    },
+    settingsDetailBody: {
+        fontSize: 13,
+        lineHeight: 20,
+    },
+    statusPill: {
+        alignSelf: 'flex-start',
+        borderRadius: 999,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        marginTop: 14,
+    },
+    settingsActionRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginTop: 14,
+    },
+    settingsActionButton: {
+        flex: 1,
+    },
+    supportEmail: {
+        fontSize: 15,
+        fontWeight: '700',
+        marginTop: 12,
     },
 
     // Web style checkbox row

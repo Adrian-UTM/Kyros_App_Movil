@@ -153,7 +153,7 @@ export default function ClientesScreen() {
 
     return (
         <KyrosScreen title="Clientes">
-            <ScrollView style={styles.container}>
+            <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
                 {/* Search + Add */}
                 <View style={[styles.topSection, { flexDirection: 'column', gap: 16, backgroundColor: palette.surface, borderColor: palette.border }]}>
                     <View style={{ flexDirection: 'row', gap: 12 }}>

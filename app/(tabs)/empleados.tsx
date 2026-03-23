@@ -174,7 +174,7 @@ export default function EmpleadosScreen() {
 
     return (
         <KyrosScreen title="Empleados">
-            <ScrollView style={styles.container}>
+            <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
                 {/* Add Button & Filter */}
                 <View style={[styles.topSection, { flexDirection: 'column', gap: 16, backgroundColor: palette.surface, padding: 16, margin: 16, borderRadius: 16, borderWidth: 1, borderColor: palette.border }]}>
                     <KyrosButton mode="contained" icon="account-plus" onPress={openCreate}>

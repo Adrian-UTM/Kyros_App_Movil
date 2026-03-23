@@ -75,7 +75,7 @@ function ServiceHighlightsCard({
         <KyrosCard style={{ flex: 1 }}>
             <View style={styles.servicesCardHeader}>
                 <View>
-                    <Text variant="titleMedium" style={[styles.cardTitle, { marginBottom: 4 }]}>{title}</Text>
+                    <Text variant="titleMedium" style={[styles.cardTitle, { marginBottom: 4, color: palette.textStrong }]}>{title}</Text>
                     <Text style={[styles.servicesCardSubtitle, { color: palette.textMuted }]}>
                         {total > 0 ? `${total} servicio(s) registrados en el período` : 'Sin actividad en el período'}
                     </Text>
@@ -92,7 +92,7 @@ function ServiceHighlightsCard({
             ) : data.length === 0 ? (
                 <View style={styles.servicesEmptyState}>
                     <MaterialIcons name="insert-chart-outlined" size={34} color={palette.disabled} />
-                    <Text style={[styles.emptyText, { marginVertical: 12 }]}>Sin datos de servicios para este período</Text>
+                    <Text style={[styles.emptyText, { marginVertical: 12, color: palette.textStrong }]}>Sin datos de servicios para este período</Text>
                 </View>
             ) : (
                 <>
@@ -405,7 +405,7 @@ export default function EstadisticasScreen() {
 
     return (
         <KyrosScreen title="Estadísticas">
-            <ScrollView style={[styles.container, { backgroundColor: palette.background }]} contentContainerStyle={{ paddingBottom: 40, paddingHorizontal: 12 }}>
+            <ScrollView style={[styles.container, { backgroundColor: palette.background }]} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40, paddingHorizontal: 12 }}>
 
                 {/* Date Controls (Applies to Revenue & Citas) */}
                 <View style={{ marginTop: 20, marginBottom: 10, alignSelf: 'center', width: '100%', maxWidth: 600 }}>
@@ -561,7 +561,7 @@ export default function EstadisticasScreen() {
                             {servicesLoading ? (
                                 <ActivityIndicator style={{ marginVertical: 30 }} />
                             ) : !selectedBranchId ? (
-                                <Text style={styles.emptyText}>Selecciona una sucursal para ver sus analíticas.</Text>
+                                <Text style={[styles.emptyText, { color: palette.textStrong }]}>Selecciona una sucursal para ver sus analíticas.</Text>
                             ) : (
                                 <View style={{ flexDirection: 'column', gap: 12, marginTop: 10 }}>
                                     {branchServicesData.map((item, idx) => {
@@ -577,7 +577,7 @@ export default function EstadisticasScreen() {
                                             </View>
                                         );
                                     })}
-                                    {branchServicesData.length === 0 && <Text style={styles.emptyText}>Sin registros</Text>}
+                                    {branchServicesData.length === 0 && <Text style={[styles.emptyText, { color: palette.textStrong }]}>Sin registros</Text>}
                                 </View>
                             )}
                         </KyrosCard>
@@ -609,13 +609,13 @@ export default function EstadisticasScreen() {
                             <KyrosCard style={{ flex: 1 }}>
                                 <Text variant="titleLarge" style={[styles.cardTitle, { textAlign: 'center', color: palette.textStrong }]}>Ingresos Estimados</Text>
                                 {revenueData.length === 0 && !loading ? (
-                                    <Text style={styles.emptyText}>Sin ingresos para este período</Text>
+                                    <Text style={[styles.emptyText, { color: palette.textStrong }]}>Sin ingresos para este período</Text>
                                 ) : (
                                     <View style={[styles.chartWrapper, { height: '80%' }]}>
                                         <View style={styles.yAxis}>
-                                            <Text style={[styles.yAxisLabel, { transform: [{ rotate: '-90deg' }], left: -40, top: 150, position: 'absolute' }]}>Ingreso ($)</Text>
+                                            <Text style={[styles.yAxisLabel, { transform: [{ rotate: '-90deg' }], left: -40, top: 150, position: 'absolute', color: palette.textMuted }]}>Ingreso ($)</Text>
                                             {[maxValueRevenue, maxValueRevenue * 0.5, 0].map((val, i) => (
-                                                <Text key={i} style={styles.yAxisText}>${Math.round(val)}</Text>
+                                                <Text key={i} style={[styles.yAxisText, { color: palette.textMuted }]}>${Math.round(val)}</Text>
                                             ))}
                                         </View>
                                         <View style={styles.chartContainer}>
@@ -625,10 +625,10 @@ export default function EstadisticasScreen() {
                                                     return (
                                                         <View key={index} style={styles.barWrapper}>
                                                             <View style={styles.barSpace}>
-                                                                <Text style={{ color: '#fff', fontSize: 12, marginBottom: 4 }}>${data.value}</Text>
+                                                                <Text style={{ color: palette.textStrong, fontSize: 12, marginBottom: 4 }}>${data.value}</Text>
                                                                 <View style={[styles.bar, { height: `${heightPercentage}%`, backgroundColor: '#10b981' }]} />
                                                             </View>
-                                                            <Text style={styles.barLabel}>{data.name}</Text>
+                                                            <Text style={[styles.barLabel, { color: palette.textMuted }]}>{data.name}</Text>
                                                         </View>
                                                     );
                                                 })}
@@ -642,13 +642,13 @@ export default function EstadisticasScreen() {
                             <KyrosCard style={{ flex: 1 }}>
                                 <Text variant="titleLarge" style={[styles.cardTitle, { textAlign: 'center', color: palette.textStrong }]}>Citas por Sucursal</Text>
                                 {citasPorSucursalData.length === 0 && !loading ? (
-                                    <Text style={styles.emptyText}>Sin datos para este período</Text>
+                                    <Text style={[styles.emptyText, { color: palette.textStrong }]}>Sin datos para este período</Text>
                                 ) : (
                                     <View style={[styles.chartWrapper, { height: '80%' }]}>
                                         <View style={styles.yAxis}>
-                                            <Text style={[styles.yAxisLabel, { transform: [{ rotate: '-90deg' }], left: -30, top: 150, position: 'absolute' }]}>Citas</Text>
+                                            <Text style={[styles.yAxisLabel, { transform: [{ rotate: '-90deg' }], left: -30, top: 150, position: 'absolute', color: palette.textMuted }]}>Citas</Text>
                                             {[maxValueCitas, maxValueCitas * 0.5, 0].map((val, i) => (
-                                                <Text key={i} style={styles.yAxisText}>{Math.round(val)}</Text>
+                                                <Text key={i} style={[styles.yAxisText, { color: palette.textMuted }]}>{Math.round(val)}</Text>
                                             ))}
                                         </View>
                                         <View style={styles.chartContainer}>
@@ -658,10 +658,10 @@ export default function EstadisticasScreen() {
                                                     return (
                                                         <View key={index} style={styles.barWrapper}>
                                                             <View style={styles.barSpace}>
-                                                                <Text style={{ color: '#fff', fontSize: 12, marginBottom: 4 }}>{data.value}</Text>
+                                                                <Text style={{ color: palette.textStrong, fontSize: 12, marginBottom: 4 }}>{data.value}</Text>
                                                                 <View style={[styles.bar, { height: `${heightPercentage}%`, backgroundColor: '#3b82f6' }]} />
                                                             </View>
-                                                            <Text style={styles.barLabel}>{data.name}</Text>
+                                                            <Text style={[styles.barLabel, { color: palette.textMuted }]}>{data.name}</Text>
                                                         </View>
                                                     );
                                                 })}
@@ -688,22 +688,22 @@ export default function EstadisticasScreen() {
                                 <Text variant="titleLarge" style={[styles.cardTitle, { textAlign: 'center', marginBottom: 30, color: palette.textStrong }]}>
                                     Servicios por Sucursal
                                 </Text>
-                                <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}>
+                                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}>
                                     <View style={{ flexDirection: 'column', gap: 20 }}>
                                         {branchServicesData.map((item, idx) => {
                                             const maxBCount = Math.max(...(branchServicesData.length ? branchServicesData.map(d => d.count) : [1]), 1);
                                             const wPct = (item.count / maxBCount) * 100;
                                             return (
                                                 <View key={idx} style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                                    <Text style={{ width: 140, color: '#94a3b8', fontSize: 14, marginRight: 12 }} numberOfLines={2}>{item.name}</Text>
+                                                    <Text style={{ width: 140, color: palette.textStrong, fontSize: 14, marginRight: 12 }} numberOfLines={2}>{item.name}</Text>
                                                     <View style={{ flex: 1, height: 24, backgroundColor: '#1E293B', borderRadius: 6, overflow: 'hidden' }}>
                                                         <View style={{ width: `${Math.max(wPct, 2)}%`, height: '100%', backgroundColor: item.color, borderRadius: 6 }} />
                                                     </View>
-                                                    <Text style={{ width: 40, color: '#fff', fontSize: 14, marginLeft: 12, textAlign: 'right', fontWeight: 'bold' }}>{item.count}</Text>
+                                                    <Text style={{ width: 40, color: palette.textStrong, fontSize: 14, marginLeft: 12, textAlign: 'right', fontWeight: 'bold' }}>{item.count}</Text>
                                                 </View>
                                             );
                                         })}
-                                        {branchServicesData.length === 0 && <Text style={[styles.emptyText, { marginTop: 40 }]}>No hay datos</Text>}
+                                        {branchServicesData.length === 0 && <Text style={[styles.emptyText, { marginTop: 40, color: palette.textStrong }]}>No hay datos</Text>}
                                     </View>
                                 </ScrollView>
                             </KyrosCard>
